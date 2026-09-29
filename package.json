@@ -9,7 +9,6 @@
   "exports": {
     ".": "./src/index.js",
     "./backend": "./src/backend.js",
-    "./setup": "./src/setup.js",
     "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./presets/qwen38.patch.yml": "./presets/qwen38.patch.yml",
@@ -40,7 +39,6 @@
   },
   "scripts": {
     "test": "node --test \"test/**/*.test.js\"",
-    "setup": "node src/setup.js",
     "build:client": "node scripts/build-client.mjs"
   },
   "keywords": [
