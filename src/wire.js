@@ -23,6 +23,29 @@ export const PROVIDER_PROTOCOL_ERROR_CODE = 'PROVIDER_PROTOCOL_ERROR'
 export const PROVIDER_ERROR_CODE = 'PROVIDER_ERROR'
 
 /**
+ * ChatML/vision control-token literals (`<|im_start|>`-shaped markers, the
+ * image/video pad tokens, and friends). They enter a transcript when a chat
+ * template or tokenizer file is read as plain text. Left on the wire, the
+ * line's tokenizer re-parses them as genuine special tokens: vision pad
+ * pairing shifts and the server rejects any later image request with an
+ * embeddings-count error, and turn-boundary tokens mid-history corrupt or
+ * truncate the thinking stream (observed 2026-09-29 on strata and NInfer).
+ */
+const CONTROL_TOKEN = /<\|([A-Za-z0-9_]{1,40})\|>/g
+
+/**
+ * Neutralize control-token literals in wire-bound text. Fullwidth lookalikes
+ * read the same to a human but can never re-form a registered token. Text
+ * without `<|` (the overwhelming majority) is returned untouched.
+ * @param text - wire-bound text (or a non-string pass-through).
+ * @returns the safe text.
+ */
+export function scrubControlTokens(text) {
+  if (typeof text !== 'string' || !text.includes('<|')) return text
+  return text.replace(CONTROL_TOKEN, (_match, name) => `＜｜${name}｜＞`)
+}
+
+/**
  * NInfer vision token cost for one image: one token per 32x32 pixel patch
  * plus two markers, a pure function of input resolution (measured on NInfer
  * 0.4.0/0.5.0: 256^2 = 66, 1024^2 = 1026, 2048x1024 = 2050).
@@ -113,7 +136,8 @@ function messageContent(message, imageDataUrls = new Map()) {
       + 'this adapter supports text, image, tool-result, reasoning, and tool-call',
     )
   }
-  if (entries.length === 0) return text
+  if (entries.length === 0) return scrubControlTokens(text)
+  text = scrubControlTokens(text)
   if (!hasMedia) {
     // No resolvable media: every entry is text (placeholders), so the content
     // flattens to a string and the image information survives.
@@ -155,6 +179,7 @@ function toolResultMessages(message, imageDataUrls = new Map()) {
         }
       }
     }
+    text = scrubControlTokens(text)
     const payload = block.isError ? `[error] ${text}` : text
     if (media.length === 0) {
       out.push({ role: 'tool', tool_call_id: block.toolCallId, content: payload })
@@ -180,7 +205,7 @@ function toolResultMessages(message, imageDataUrls = new Map()) {
  */
 export function toOpenAiMessages(options, imageDataUrls = new Map()) {
   const messages = []
-  if (options.system) messages.push({ role: 'system', content: options.system })
+  if (options.system) messages.push({ role: 'system', content: scrubControlTokens(options.system) })
   const source = options.messages ?? []
   for (const [index, message] of source.entries()) {
     if (message.role === 'assistant') {
@@ -194,13 +219,14 @@ export function toOpenAiMessages(options, imageDataUrls = new Map()) {
         else if (block.type === 'image') text += `[image: ${(block.attachment ?? {}).name ?? ''}]`
       }
       const wire = { role: 'assistant' }
+      text = scrubControlTokens(text)
       wire.content = text === '' && toolCalls.length > 0 ? null : text
-      if (reasoning !== '') wire.reasoning_content = reasoning
+      if (reasoning !== '') wire.reasoning_content = scrubControlTokens(reasoning)
       if (toolCalls.length > 0) {
         wire.tool_calls = toolCalls.map((block, i) => ({
           id: block.id,
           type: 'function',
-          function: { name: block.name, arguments: block.arguments },
+          function: { name: block.name, arguments: scrubControlTokens(block.arguments) },
         }))
       }
       messages.push(wire)

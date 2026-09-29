@@ -15,7 +15,12 @@ import {
   parseFrame,
   chunksFromCompletion,
   chatCompletionsUrl,
+  scrubControlTokens,
 } from '../src/wire.js'
+
+// Build a control-token literal without this source file itself holding one.
+const BAR = String.fromCharCode(124)
+const tok = (name) => `<${BAR}${name}${BAR}>`
 
 const NINFER = {
   dialect: 'ninfer',
@@ -355,4 +360,38 @@ test('chunksFromCompletion: non-stream JSON answer with reasoning and tools', ()
   const ends = chunks.filter((c) => c.type === 'block-end').map((c) => c.block.type)
   assert.deepEqual(ends, ['reasoning', 'text', 'tool-call'])
   assert.deepEqual(chunks.at(-1).reason, { kind: 'stop' })
+})
+
+test('scrub: control-token literals from user, system, assistant, and tool text never reach the wire raw', () => {
+  const messages = toOpenAiMessages({
+    system: `sys ${tok('im_end')} tail`,
+    messages: [
+      { role: 'user', content: [{ type: 'text', text: `template line: ${tok('im_start')}assistant` }] },
+      { role: 'assistant', content: [
+        { type: 'reasoning', text: `the file shows ${tok('im_start')} usage` },
+        { type: 'tool-call', id: 'c1', name: 'write', arguments: `{"content": "${tok('image_pad')} x"}` },
+      ] },
+      { role: 'user', content: [
+        { type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: `wrote ${tok('vision_start')} fine` }] },
+      ] },
+    ],
+  })
+  const flat = JSON.stringify(messages)
+  assert.ok(!flat.includes(`<${BAR}`), 'no control-token opening survives anywhere on the wire')
+  assert.ok(flat.includes('\uFF1C\uFF5Cim_start\uFF5C\uFF1E'), 'the literal is kept readable in fullwidth form')
+})
+
+test('scrub: a marker split across blocks is caught after the join; plain text untouched', () => {
+  const messages = toOpenAiMessages({
+    messages: [{ role: 'assistant', content: [
+      { type: 'text', text: `<${BAR}im_` },
+      { type: 'text', text: `start${BAR}>` },
+    ] }],
+  })
+  assert.equal(messages[0].content, '\uFF1C\uFF5Cim_start\uFF5C\uFF1E')
+})
+
+test('scrubControlTokens: non-strings pass through; ordinary angle/pipe text is untouched', () => {
+  assert.equal(scrubControlTokens(undefined), undefined)
+  assert.equal(scrubControlTokens('plain < text | pipe > angles <|> not-a-token'), 'plain < text | pipe > angles <|> not-a-token')
 })
