@@ -8,6 +8,13 @@
       name: '@deepseek-ai/dsh-agent-preset'
       config:
         id: qwen38
+        # The card identity on the Agent presets page. rc.2 exposes only one
+        # unlocalized string per field (the built-in presets localize through
+        # a host-owned dictionary third parties cannot enter), so this copy is
+        # the English half of the old 0.1.6 zh/en pair; a Chinese deployment
+        # can override both fields on its own `preset-qwen38` row.
+        name: Qwen38 mode
+        description: Standard mode + custom compaction
         order: 5
         plugins:
           - id: persona
