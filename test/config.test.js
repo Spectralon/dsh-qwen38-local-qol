@@ -117,3 +117,30 @@ test('resolveConfig: provider list trims and filters empties, falls back when em
   assert.deepEqual(resolveConfig({ provider: [' a ', '', 'b'] }, {}).provider, ['a', 'b'])
   assert.deepEqual(resolveConfig({ provider: [] }, {}).provider, ['qwen38'])
 })
+
+test('resolveConfig: the line selector activates the named lines block wholesale', () => {
+  const base = {
+    line: 'tabbyapi',
+    baseURL: 'http://flat/v1',
+    model: 'flat-model',
+    lines: {
+      tabbyapi: { baseURL: 'http://localhost:8083/v1', model: 'Flash-Next-EXL3', contextWindow: 131072, maxTokens: 32768, apiKey: 'k9' },
+      ninfer: { baseURL: 'http://localhost:8082/v1', model: 'ninfer-line' },
+    },
+  }
+  const resolved = resolveConfig(base, {})
+  assert.equal(resolved.dialect, 'tabbyapi')
+  assert.equal(resolved.baseURL, 'http://localhost:8083/v1')
+  assert.equal(resolved.model, 'Flash-Next-EXL3')
+  assert.equal(resolved.contextWindow, 131072)
+  assert.equal(resolved.maxTokens, 32768)
+})
+
+test('resolveConfig: empty or unknown line keeps the legacy flat form authoritative', () => {
+  assert.equal(resolveConfig({ line: '', baseURL: 'http://flat/v1' }, {}).baseURL, 'http://flat/v1')
+  // A line naming a block the config does not carry changes nothing but the
+  // dialect guard still runs (flat dialect stays the flat one).
+  const resolved = resolveConfig({ line: 'omlx', dialect: 'ninfer', baseURL: 'http://flat/v1' }, {})
+  assert.equal(resolved.baseURL, 'http://flat/v1')
+  assert.equal(resolved.dialect, 'ninfer')
+})

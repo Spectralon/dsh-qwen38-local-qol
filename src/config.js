@@ -157,6 +157,17 @@ function budgetMap(value, fallback) {
  * @returns the resolved provider configuration.
  */
 export function resolveConfig(config = {}, env = process.env) {
+  // Line-selector form (the profile-config store): a non-empty `line` names
+  // one per-dialect block and its knobs become the active ones (dialect forced
+  // to the block), so switching lines in the settings form is a single field
+  // edit. An empty/absent `line` keeps the legacy flat form authoritative (the
+  // shipped patch row only carries top-level fields) - a byte-compatible base.
+  if (typeof config.line === 'string' && config.line.trim() !== '') {
+    const block = config.lines?.[config.line.trim()]
+    if (block !== undefined && block !== null && typeof block === 'object') {
+      config = { ...config, ...block, dialect: config.line.trim() }
+    }
+  }
   const dialect = setting(config.dialect, env.DSH_QWEN38_DIALECT, DIALECT_LLAMACPP)
   if (DIALECTS.includes(dialect) === false) {
     throw new Error(`dsh-qwen38-local-qol: dialect must be one of ${DIALECTS.map((d) => `"${d}"`).join(', ')}, got "${dialect}"`)

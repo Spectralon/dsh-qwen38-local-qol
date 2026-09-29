@@ -1,17 +1,22 @@
 /**
- * The plugin's user-settings section: the Settings tab's persisted namespace.
+ * The plugin's configuration schema.
  *
- * The host registers this namespace (via `settings.installSection`) with the
- * patch row as the composition base; the browser tab reads and writes it
- * through the settings Remote, and the adapter reads the resolved value per
- * request so a saved change applies on the next wire call without a restart.
+ * Two surfaces share one schema factory:
  *
- * Schema defaults mirror `resolveConfig`'s built-ins so a namespace read
- * without any user or base layer opens on the general default (the
- * llama.cpp line; NInfer and TabbyAPI are the per-line memory under
- * `lines.ninfer` / `lines.tabbyapi`). `thinkingBudgets`
- * keys and `defaultEffort` are cross-validated (the schema cannot express
- * "effort id must be a declared budget key").
+ * - `Config` (exported const): the cordis Config of the plugin row. Since
+ *   dsh 0.2.0 the profile's plugin-config store IS the settings surface -
+ *   the host auto-generates the edit form from this schema and persists
+ *   edits as a profile Cordis patch. Every user-facing leaf is declared
+ *   `.volatile()`, so an edit commits into the running config reference and
+ *   emits `loader/volatile-update` without remounting the fiber; the adapter
+ *   re-reads its resolved view per request, so a saved change lands on the
+ *   next wire call.
+ * - `sectionSchema()`: the plain (non-volatile) base, kept for the resolve
+ *   fallbacks, tests, and the legacy settings-namespace path pre-0.2.0.
+ *
+ * The `line` selector (empty = legacy flat form): the profile patch keeps
+ * every server line's knobs side by side under `lines.<dialect>`; setting
+ * `line` to a dialect makes that block the active one in one edit.
  *
  * @module dsh-qwen38-local-qol/settings-section
  */
@@ -38,105 +43,131 @@ import {
 } from './config.js'
 import { DEFAULT_TRIM_KNOBS } from './prepare.js'
 
-/** The settings namespace this plugin owns. */
+/** The settings namespace this plugin owned pre-0.2.0 (kept for status text and tests). */
 export const NS = 'qwen38-local-qol'
+
+/** Identity modifier for the plain schema variant. */
+const plain = (schema) => schema
+/** Volatile modifier: the leaf is hot-editable (no remount) in 0.2.0 hosts. */
+const volatile = (schema) => schema.volatile()
 
 /**
  * The per-dialect line block. Each server line (llama.cpp, NInfer, TabbyAPI) remembers
  * its own connection (`baseURL`/`model`/`displayName`) and its own window
  * numbers (`contextWindow`/`maxTokens`/`thinkingBudgets`): the context window
  * is a property of the line's server build (its `-c`, bounded by that line's
- * VRAM and quantization), not of the model — two lines of the same model may
+ * VRAM and quantization), not of the model - two lines of the same model may
  * legitimately carry different windows, and a shared window would
  * miscalibrate the compaction threshold of the smaller one. The top-level
  * `baseURL`/`model`/`displayName`/`contextWindow`/`maxTokens`/`thinkingBudgets`
  * plus `defaultThinkingBudget` and `summarize` stay authoritative at the top
- * level for the adapter and the compaction backend (the tab writes them in sync
- * with the active line); `lines` is the per-dialect memory the tab swaps
- * between — including the thinking budget (a property of the line's server
- * build, e.g. NInfer's `--default-thinking-budget`) and the trim knobs (a
- * per-line preference).
+ * level for the adapter and the compaction backend while `line` is empty (the
+ * shipped patch rows use that flat form); `lines` is the per-dialect memory,
+ * and the block named by `line` becomes the live one when it is set -
+ * including the thinking budget (a property of the line's server build, e.g.
+ * NInfer's `--default-thinking-budget`) and the trim knobs (a per-line
+ * preference).
  */
-function lineSchema(baseURL, model, contextWindow, maxTokens, budgets) {
+function lineSchema(baseURL, model, contextWindow, maxTokens, budgets, mark) {
   return Schema.object({
-    baseURL: Schema.string().default(baseURL),
-    model: Schema.string().default(model),
-    displayName: Schema.string().default(''),
-    // This line's own server credential (empty = keyless). The tab persists
-    // one per line; the top-level `apiKey` mirrors the ACTIVE line and is
-    // what the adapter sends (Authorization: Bearer).
-    apiKey: Schema.string().default(''),
-    contextWindow: Schema.number().default(contextWindow),
-    maxTokens: Schema.number().default(maxTokens),
+    baseURL: mark(Schema.string()).default(baseURL),
+    model: mark(Schema.string()).default(model),
+    displayName: mark(Schema.string()).default(''),
+    // This line's own server credential (empty = keyless). The top-level
+    // `apiKey` mirrors the ACTIVE line and is what the adapter sends
+    // (Authorization: Bearer).
+    apiKey: mark(Schema.string()).default(''),
+    contextWindow: mark(Schema.number()).default(contextWindow),
+    maxTokens: mark(Schema.number()).default(maxTokens),
     thinkingBudgets: Schema.object({
-      low: Schema.number().default(budgets.low),
-      medium: Schema.number().default(budgets.medium),
-      xhigh: Schema.number().default(budgets.xhigh),
+      low: mark(Schema.number()).default(budgets.low),
+      medium: mark(Schema.number()).default(budgets.medium),
+      xhigh: mark(Schema.number()).default(budgets.xhigh),
     }),
-    defaultThinkingBudget: Schema.number().default(16384),
+    defaultThinkingBudget: mark(Schema.number()).default(16384),
     summarize: Schema.object({
-      images: Schema.string().default(DEFAULT_TRIM_KNOBS.images),
-      keepTurns: Schema.number().default(DEFAULT_TRIM_KNOBS.keepTurns),
-      toolChars: Schema.number().default(DEFAULT_TRIM_KNOBS.toolChars),
+      images: mark(Schema.string()).default(DEFAULT_TRIM_KNOBS.images),
+      keepTurns: mark(Schema.number()).default(DEFAULT_TRIM_KNOBS.keepTurns),
+      toolChars: mark(Schema.number()).default(DEFAULT_TRIM_KNOBS.toolChars),
     }),
   })
 }
 
 /**
- * Build the namespace schema. Field names match the `resolveConfig` output so
- * a resolved value is directly consumable by the adapter; unknown keys pass
- * through, so a row base carrying extra keys (e.g. `provider`) stays intact.
+ * Build one variant of the config schema.
+ * @param mark - leaf modifier (`plain` or `volatile`).
+ * @returns the schemastery object schema.
+ */
+function buildSchema(mark) {
+  return Schema.object({
+    // The line selector (empty = the flat top-level form below stays
+    // authoritative; a dialect name activates that `lines` block wholesale).
+    line: mark(Schema.string()).default(''),
+    dialect: mark(Schema.string()).default(DIALECT_LLAMACPP),
+    baseURL: mark(Schema.string()).default(DEFAULT_LLAMA_BASE_URL),
+    model: mark(Schema.string()).default(DEFAULT_LLAMA_MODEL),
+    displayName: mark(Schema.string()).default(''),
+    lines: Schema.object({
+      ninfer: lineSchema(DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS, DEFAULT_THINKING_BUDGETS, mark),
+      llamacpp: lineSchema(DEFAULT_LLAMA_BASE_URL, DEFAULT_LLAMA_MODEL, DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS, DEFAULT_THINKING_BUDGETS, mark),
+      tabbyapi: lineSchema(DEFAULT_TABBYAPI_BASE_URL, DEFAULT_TABBYAPI_MODEL, DEFAULT_TABBYAPI_CONTEXT_WINDOW, DEFAULT_TABBYAPI_MAX_TOKENS, DEFAULT_THINKING_BUDGETS, mark),
+      omlx: lineSchema(DEFAULT_OMLX_BASE_URL, DEFAULT_OMLX_MODEL, DEFAULT_OMLX_CONTEXT_WINDOW, DEFAULT_OMLX_MAX_TOKENS, DEFAULT_THINKING_BUDGETS, mark),
+    }),
+    apiKey: mark(Schema.string()).default(''),
+    contextWindow: mark(Schema.number()).default(DEFAULT_CONTEXT_WINDOW),
+    maxTokens: mark(Schema.number()).default(DEFAULT_MAX_TOKENS),
+    thinkingBudgets: Schema.object({
+      low: mark(Schema.number()).default(DEFAULT_THINKING_BUDGETS.low),
+      medium: mark(Schema.number()).default(DEFAULT_THINKING_BUDGETS.medium),
+      xhigh: mark(Schema.number()).default(DEFAULT_THINKING_BUDGETS.xhigh),
+    }),
+    defaultThinkingBudget: mark(Schema.number()).default(16384),
+    defaultEffort: mark(Schema.string()).default('medium'),
+    thinkingLevelMap: mark(Schema.dict(Schema.string())).default({}),
+    includeUsage: mark(Schema.boolean()).default(true),
+    summarize: Schema.object({
+      images: mark(Schema.string()).default(DEFAULT_TRIM_KNOBS.images),
+      keepTurns: mark(Schema.number()).default(DEFAULT_TRIM_KNOBS.keepTurns),
+      toolChars: mark(Schema.number()).default(DEFAULT_TRIM_KNOBS.toolChars),
+    }),
+    // The compaction wiring status rode the pre-0.2.0 section base (the tab
+    // rendered it); the 0.2.0 Config does not carry status fields - the
+    // preset is statically declared by the bundle patch.
+    compaction: Schema.object({
+      presetGenerated: mark(Schema.boolean()).default(false),
+      defaultPreset: mark(Schema.string()).default('standard'),
+    }),
+  })
+}
+
+/**
+ * The plugin's cordis Config (0.2.0 host surface). Unknown keys pass through,
+ * so a row base carrying extra keys (e.g. `provider`) stays intact.
  * @returns the schemastery object schema for the section.
  */
 export function sectionSchema() {
-  return Schema.object({
-    dialect: Schema.string().default(DIALECT_LLAMACPP),
-    baseURL: Schema.string().default(DEFAULT_LLAMA_BASE_URL),
-    model: Schema.string().default(DEFAULT_LLAMA_MODEL),
-    displayName: Schema.string().default(''),
-    lines: Schema.object({
-      ninfer: lineSchema(DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS, DEFAULT_THINKING_BUDGETS),
-      llamacpp: lineSchema(DEFAULT_LLAMA_BASE_URL, DEFAULT_LLAMA_MODEL, DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS, DEFAULT_THINKING_BUDGETS),
-      tabbyapi: lineSchema(DEFAULT_TABBYAPI_BASE_URL, DEFAULT_TABBYAPI_MODEL, DEFAULT_TABBYAPI_CONTEXT_WINDOW, DEFAULT_TABBYAPI_MAX_TOKENS, DEFAULT_THINKING_BUDGETS),
-      omlx: lineSchema(DEFAULT_OMLX_BASE_URL, DEFAULT_OMLX_MODEL, DEFAULT_OMLX_CONTEXT_WINDOW, DEFAULT_OMLX_MAX_TOKENS, DEFAULT_THINKING_BUDGETS),
-    }),
-    apiKey: Schema.string().default(''),
-    contextWindow: Schema.number().default(DEFAULT_CONTEXT_WINDOW),
-    maxTokens: Schema.number().default(DEFAULT_MAX_TOKENS),
-    thinkingBudgets: Schema.object({
-      low: Schema.number().default(DEFAULT_THINKING_BUDGETS.low),
-      medium: Schema.number().default(DEFAULT_THINKING_BUDGETS.medium),
-      xhigh: Schema.number().default(DEFAULT_THINKING_BUDGETS.xhigh),
-    }),
-    defaultThinkingBudget: Schema.number().default(16384),
-    defaultEffort: Schema.string().default('medium'),
-    thinkingLevelMap: Schema.dict(Schema.string()).default({}),
-    includeUsage: Schema.boolean().default(true),
-    summarize: Schema.object({
-      images: Schema.string().default(DEFAULT_TRIM_KNOBS.images),
-      keepTurns: Schema.number().default(DEFAULT_TRIM_KNOBS.keepTurns),
-      toolChars: Schema.number().default(DEFAULT_TRIM_KNOBS.toolChars),
-    }),
-    // The compaction wiring status the tab renders (the host reads it at boot
-    // into the section base): the trim controls apply only to sessions using
-    // the qwen38 preset, so the tab states which preset new sessions take.
-    compaction: Schema.object({
-      presetGenerated: Schema.boolean().default(false),
-      defaultPreset: Schema.string().default('standard'),
-    }),
-  })
+  return buildSchema(plain)
 }
 
+/** The hot-editable cordis Config for the plugin row. */
+export const Config = buildSchema(volatile)
+
 /**
- * Cross-field validation for a resolved section the schema alone cannot
- * express. Fails loud so a bad tab write is refused at the write, not met
+ * Cross-field validation for a resolved config the schema alone cannot
+ * express. Fails loud so a bad settings write is refused at the write, not met
  * mid-request.
- * @param value - the resolved section, schema-valid by construction.
+ * @param value - the resolved config, schema-valid by construction.
  * @throws {Error} when a field combination the adapter cannot serve.
  */
 export function validateSection(value) {
-  if (DIALECTS.includes(value.dialect) === false) {
+  // Each check only fires on a field the document actually carries (a host
+  // parse fills every schema default, so in the 0.2.0 store path everything
+  // present is still checked; bare unit-test configs stay silent on absence).
+  if (value.dialect !== undefined && DIALECTS.includes(value.dialect) === false) {
     throw new Error(`dsh-qwen38-local-qol: dialect must be one of ${DIALECTS.map((d) => `"${d}"`).join(', ')}, got "${value.dialect}"`)
+  }
+  if (typeof value.line === 'string' && value.line.trim() !== '' && !DIALECTS.includes(value.line.trim())) {
+    throw new Error(`dsh-qwen38-local-qol: line must be empty or one of ${DIALECTS.map((d) => `"${d}"`).join(', ')}, got "${value.line}"`)
   }
   const budgets = value.thinkingBudgets ?? {}
   for (const [effort, budgetTokens] of Object.entries(budgets)) {
@@ -144,7 +175,7 @@ export function validateSection(value) {
       throw new Error(`dsh-qwen38-local-qol: thinkingBudgets["${effort}"] must be a positive integer, got ${String(budgetTokens)}`)
     }
   }
-  if (!Number.isInteger(value.defaultThinkingBudget) || value.defaultThinkingBudget <= 0) {
+  if (value.defaultThinkingBudget !== undefined && (!Number.isInteger(value.defaultThinkingBudget) || value.defaultThinkingBudget <= 0)) {
     throw new Error(`dsh-qwen38-local-qol: defaultThinkingBudget must be a positive integer, got ${String(value.defaultThinkingBudget)}`)
   }
   // The per-line memory carries the same window numbers; validate each line
@@ -153,7 +184,7 @@ export function validateSection(value) {
     if (line === undefined || line === null || typeof line !== 'object') continue
     for (const knob of ['contextWindow', 'maxTokens']) {
       const raw = line[knob]
-      if (!Number.isInteger(raw) || raw <= 0) {
+      if (raw !== undefined && (!Number.isInteger(raw) || raw <= 0)) {
         throw new Error(`dsh-qwen38-local-qol: lines.${lineName}.${knob} must be a positive integer, got ${String(raw)}`)
       }
     }
@@ -163,39 +194,44 @@ export function validateSection(value) {
       }
     }
     const lineDefaultBudget = line.defaultThinkingBudget
-    if (!Number.isInteger(lineDefaultBudget) || lineDefaultBudget <= 0) {
+    if (lineDefaultBudget !== undefined && (!Number.isInteger(lineDefaultBudget) || lineDefaultBudget <= 0)) {
       throw new Error(`dsh-qwen38-local-qol: lines.${lineName}.defaultThinkingBudget must be a positive integer, got ${String(lineDefaultBudget)}`)
     }
     const lineImages = line.summarize?.images
-    if (lineImages !== 'strip' && lineImages !== 'keep') {
+    if (lineImages !== undefined && lineImages !== 'strip' && lineImages !== 'keep') {
       throw new Error(`dsh-qwen38-local-qol: lines.${lineName}.summarize.images must be "strip" or "keep", got "${lineImages}"`)
     }
     for (const knob of ['keepTurns', 'toolChars']) {
       const raw = line.summarize?.[knob]
-      if (!Number.isInteger(raw) || raw < 0) {
+      if (raw !== undefined && (!Number.isInteger(raw) || raw < 0)) {
         throw new Error(`dsh-qwen38-local-qol: lines.${lineName}.summarize.${knob} must be a non-negative integer, got ${String(raw)}`)
       }
     }
   }
-  if (value.defaultEffort !== 'off' && budgets[value.defaultEffort] === undefined) {
+  if (value.defaultEffort !== undefined && value.defaultEffort !== 'off' && budgets[value.defaultEffort] === undefined) {
     throw new Error(`dsh-qwen38-local-qol: defaultEffort "${value.defaultEffort}" is not a declared effort ("off" + thinkingBudgets keys)`)
   }
-  const images = value.summarize?.images
-  if (images !== 'strip' && images !== 'keep') {
-    throw new Error(`dsh-qwen38-local-qol: summarize.images must be "strip" or "keep", got "${images}"`)
-  }
-  for (const knob of ['keepTurns', 'toolChars']) {
-    const raw = value.summarize?.[knob]
-    if (!Number.isInteger(raw) || raw < 0) {
-      throw new Error(`dsh-qwen38-local-qol: summarize.${knob} must be a non-negative integer, got ${String(raw)}`)
+  if (value.summarize !== undefined) {
+    const images = value.summarize?.images
+    if (images !== undefined && images !== 'strip' && images !== 'keep') {
+      throw new Error(`dsh-qwen38-local-qol: summarize.images must be "strip" or "keep", got "${images}"`)
+    }
+    for (const knob of ['keepTurns', 'toolChars']) {
+      const raw = value.summarize?.[knob]
+      if (raw !== undefined && (!Number.isInteger(raw) || raw < 0)) {
+        throw new Error(`dsh-qwen38-local-qol: summarize.${knob} must be a non-negative integer, got ${String(raw)}`)
+      }
     }
   }
-  // The status fields ride the section base; a hand-edited document must not
-  // park a non-boolean flag or an empty preset id the tab would render.
-  if (typeof value.compaction?.presetGenerated !== 'boolean') {
-    throw new Error(`dsh-qwen38-local-qol: compaction.presetGenerated must be a boolean, got ${String(value.compaction?.presetGenerated)}`)
-  }
-  if (typeof value.compaction?.defaultPreset !== 'string' || value.compaction.defaultPreset.trim() === '') {
-    throw new Error(`dsh-qwen38-local-qol: compaction.defaultPreset must be a non-empty string, got ${String(value.compaction?.defaultPreset)}`)
+  // The status fields ride the legacy section base only; a 0.2.0 Config has
+  // none. Validate them when present so a hand-edited legacy document cannot
+  // park junk the old tab would render.
+  if (value.compaction !== undefined) {
+    if (typeof value.compaction?.presetGenerated !== 'boolean') {
+      throw new Error(`dsh-qwen38-local-qol: compaction.presetGenerated must be a boolean, got ${String(value.compaction?.presetGenerated)}`)
+    }
+    if (typeof value.compaction?.defaultPreset !== 'string' || value.compaction.defaultPreset.trim() === '') {
+      throw new Error(`dsh-qwen38-local-qol: compaction.defaultPreset must be a non-empty string, got ${String(value.compaction?.defaultPreset)}`)
+    }
   }
 }
