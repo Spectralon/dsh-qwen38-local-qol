@@ -12,7 +12,7 @@ function fakeCtx(overrides = {}) {
   const updateCalls = []
   const state = {
     namespaces: [{
-      ns: 'qwen38-local-qol',
+      ns: 'qwen38',
       revision: 7,
       value: {
         dialect: 'ninfer',
@@ -30,9 +30,9 @@ function fakeCtx(overrides = {}) {
         compaction: { presetGenerated: true, defaultPreset: 'qwen38' },
       },
     }, {
-      ns: 'agent-presets',
+      ns: 'agent-preset-registry',
       revision: 3,
-      value: { default: 'standard', enabled: true },
+      value: { default: 'standard', selectedDefault: undefined },
     }],
   }
   const ctx = {
@@ -49,7 +49,7 @@ function fakeCtx(overrides = {}) {
           const index = state.namespaces.findIndex((entry) => entry.ns === ns)
           const target = state.namespaces[index]
           if (overrides.conflictNext && revision !== target.revision) {
-            return { ok: false, error: { code: 'settings/conflict', message: 'stale revision' } }
+            return { ok: false, error: { code: 'settings-conflict', message: 'stale revision' } }
           }
           state.namespaces[index] = { ...target, revision: target.revision + 1, value: { ...target.value, ...patch } }
           return { ok: true, value: state.namespaces[index] }
@@ -125,13 +125,13 @@ test('client: the inject face loads the namespace view and writes with the held 
   client.apply(ctx)
   const loaded = await captured.load()
   assert.equal(loaded.ok, true)
-  assert.equal(loaded.value.ns, 'qwen38-local-qol')
+  assert.equal(loaded.value.ns, 'qwen38')
   assert.equal(loaded.value.revision, 7)
 
   const saved = await captured.save(loaded.value, { model: 'new-alias' })
   assert.equal(saved.ok, true)
   assert.equal(saved.value.revision, 8)
-  assert.equal(updateCalls[0].ns, 'qwen38-local-qol')
+  assert.equal(updateCalls[0].ns, 'qwen38')
   assert.equal(updateCalls[0].revision, 7)
   assert.equal(updateCalls[0].patch.model, 'new-alias')
 })
@@ -146,7 +146,7 @@ test('client: a stale-revision write answers a conflict the caller can re-load',
   state.namespaces[0].revision = 9
   const saved = await captured.save(loaded.value, { model: 'stale-write' })
   assert.equal(saved.ok, false)
-  assert.equal(saved.code, 'settings/conflict')
+  assert.equal(saved.code, 'settings-conflict')
   const fresh = await captured.load()
   assert.equal(fresh.value.revision, 9)
 })

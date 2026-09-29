@@ -27,8 +27,8 @@
 import * as React from 'react'
 import { Button, Input, StateDot, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 
-/** The settings namespace this tab edits (mirrors the host's `NS`). */
-const NS = 'qwen38-local-qol'
+/** The settings namespace this tab edits: the plugin row's profile-entry id (0.2.0 config store). */
+const NS = 'qwen38'
 
 /** The generated preset id (mirrors the host's `PRESET_ID`). */
 const PRESET_ID = 'qwen38'
@@ -79,7 +79,7 @@ const COPY = {
     conflict: 'Someone else changed these settings while you were editing. Your edits were discarded; the current values are shown.',
     invalidNumber: 'Every number field must be a positive whole number.',
     remoteError: 'Settings request failed: ',
-    compactionNotSet: 'Local compaction is not set up — the trim controls below apply once the qwen38 preset is generated (one-time setup, see the plugin README).',
+    compactionNotSet: 'The qwen38 preset is not declared by the installed plugin bundle (reinstall or update the plugin, then restart dsh web).',
     compactionActive: 'Local compaction is active for new sessions (default preset: qwen38).',
     compactionAvailable: 'Local compaction is available, but the default preset is "{default}" — new sessions use standard compaction. Select qwen38 on the Agent presets page to enable it.',
     compactionHint: 'The trim controls apply to sessions using the qwen38 preset.',
@@ -121,7 +121,7 @@ const COPY = {
     conflict: '编辑期间他人修改了这些设置。你的改动已丢弃，当前显示的是最新值。',
     invalidNumber: '所有数字字段必须是正整数。',
     remoteError: '设置请求失败：',
-    compactionNotSet: '本地压缩未启用——生成 qwen38 预设（一次性 setup，见插件 README）后，下方裁剪设置才会生效。',
+    compactionNotSet: 'qwen38 预设未由已安装的插件 bundle 声明（重装或更新插件后重启 dsh web）。',
     compactionActive: '本地压缩对新会话生效（默认预设：qwen38）。',
     compactionAvailable: '本地压缩可用，但默认预设是 "{default}"——新会话走标准压缩。在 Agent 预设页选择 qwen38 启用。',
     compactionHint: '裁剪设置仅对 qwen38 预设的会话生效。',
@@ -423,7 +423,7 @@ function QwenLocalSectionEntry({ useLocale, load, save }) {
     const result = await save(view, patch)
     if (result.ok) {
       setState((s) => ({ ...s, busy: false, saved: true, view: result.value, draft: toDraft(result.value.value) }))
-    } else if (result.code === 'settings/conflict') {
+    } else if (result.code === 'settings-conflict') {
       const fresh = await load()
       if (fresh.ok) setState({ status: 'ready', error: t.conflict, view: fresh.value, draft: toDraft(fresh.value.value), busy: false, saved: false, agentPresets: fresh.agentPresets ?? null })
       else setState((s) => ({ ...s, busy: false, error: t.remoteError + fresh.error }))
@@ -439,11 +439,11 @@ function QwenLocalSectionEntry({ useLocale, load, save }) {
     return React.createElement('div', { className: 'qol' }, state.error)
   }
   const { view, draft } = state
-  // The status line: the startup snapshot (the section base) with the live
-  // agent-presets default from the same describe response — a default change
-  // shows up without a restart.
+  // The status line: the preset is declared statically by the bundle patch
+  // (no generated-file state anymore), so the dot turns on exactly when the
+  // live default preset is qwen38 - read from the registry row, no restart.
   const compaction = {
-    presetGenerated: (view.value.compaction ?? { presetGenerated: false }).presetGenerated,
+    presetGenerated: true,
     defaultPreset: state.agentPresets?.defaultPreset ?? view.value.compaction?.defaultPreset ?? 'standard',
   }
   const ninfer = draft.dialect === 'ninfer'
@@ -576,11 +576,14 @@ export function apply(ctx) {
           if (response.ok !== true) return { ok: false, error: response.error.message }
           const view = response.value.namespaces.find((entry) => entry.ns === NS)
           if (view === undefined) return { ok: false, error: 'ns-missing' }
-          const presets = response.value.namespaces.find((entry) => entry.ns === 'agent-presets')
+          // The preset registry row: the volatile `selectedDefault` (a user pick
+          // on the Agent presets page) wins over the deployment `default` our
+          // bundle patch points at qwen38.
+          const presets = response.value.namespaces.find((entry) => entry.ns === 'agent-preset-registry')
           return {
             ok: true,
             value: view,
-            agentPresets: presets === undefined ? null : { revision: presets.revision, defaultPreset: presets.value?.default ?? null },
+            agentPresets: presets === undefined ? null : { revision: presets.revision, defaultPreset: presets.value?.selectedDefault ?? presets.value?.default ?? null },
           }
         },
         save: async (view, patch) => {

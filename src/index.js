@@ -42,6 +42,13 @@ export const inject = ['llm']
  */
 export function apply(ctx, config = {}) {
   const resolved = resolveConfig(config)
+  // The Settings surface: this plugin ships its own page (the browser half
+  // registers a `settings.section`), so opt the auto-generated Config form
+  // off for this entry - otherwise the host would render a second editor
+  // over the same store (the llm-deepseek / locale configure precedent).
+  ctx.inject(['settings'], (settingsCtx) => {
+    settingsCtx.effect(() => settingsCtx.settings.configure({ auto: false }, ctx.fiber))
+  })
   // The attachment seam is optional (the tool-fs precedent): where the
   // profile has no attachment store the child fiber stays pending and image
   // blocks degrade to text placeholders for the process lifetime.
