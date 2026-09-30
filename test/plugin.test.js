@@ -85,7 +85,7 @@ test('apply: the adapter reads the live config reference per request (volatile c
   const ctx = makeTestCtx({}, {
     registerAdapter(_routes, adapter) {
       registered = adapter
-      return () => {}
+      return { replace: () => {} }
     },
   })
   const config = { baseURL: 'http://localhost:8080/v1', model: 'qwen3.8-27b', contextWindow: 262144 }
@@ -121,7 +121,7 @@ test('apply: a hot edit with an unservable combination warns once (loud, non-fat
   const ctx = makeTestCtx({}, {
     registerAdapter(_routes, adapter) {
       registered = adapter
-      return () => {}
+      return { replace: () => {} }
     },
   })
   const config = {}
@@ -133,6 +133,32 @@ test('apply: a hot edit with an unservable combination warns once (loud, non-fat
   for (const handler of ctx.listeners.get('loader/volatile-update') ?? []) handler([['defaultEffort']])
   assert.equal(ctx.warnings.length, 1)
   assert.match(ctx.warnings[0], /defaultEffort "ultra" is not a declared effort/)
+})
+
+test('apply: a model-bearing hot edit re-advertises the catalog; unrelated edits and no-ops stay silent', () => {
+  const replaces = []
+  const ctx = makeTestCtx({}, {
+    registerAdapter() { return { replace: (providers) => replaces.push(providers) } },
+  })
+  const config = { model: 'qwen3.8-27b' }
+  plugin.apply(ctx, config)
+  const fire = () => {
+    for (const handler of ctx.listeners.get('loader/volatile-update') ?? []) handler([['model']])
+  }
+  // A credential-only commit: none of the catalog fields moved.
+  config.apiKey = 'sk-rotated'
+  fire()
+  assert.deepEqual(replaces, [])
+  // The line switch: the model id changed, so the open model menus must be
+  // told to re-read (one replace, publishing llm/adapters-updated).
+  config.model = 'Qwen3.8-Flash-Next'
+  fire()
+  assert.equal(replaces.length, 1)
+  assert.equal(replaces[0][0], 'qwen38')
+  // A repeat with identical values rewrites nothing.
+  fire()
+  assert.equal(replaces.length, 1)
+  assert.equal(ctx.warnings.length, 0)
 })
 
 test('apply: registers the configured routes with a QwenLocalAdapter and returns the handle', () => {

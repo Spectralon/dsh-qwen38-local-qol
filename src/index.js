@@ -66,6 +66,18 @@ export function apply(ctx, config = {}) {
   // committed by the loader, so this warns; the adapter's own per-request
   // guards still refuse what it cannot serve.
   let lastWarned
+  // The catalog fields the browser's model menu caches (id, display name,
+  // capacity, selectable efforts). A volatile commit mutates the adapter but
+  // never re-registers, so without a `replace` the open pages keep showing the
+  // pre-switch model - the llm-deepseek dynamic-config precedent: compare the
+  // advertised snapshot and re-register (which publishes
+  // `llm/adapters-updated`, refreshing every selector) only when it changed.
+  const advertised = () => {
+    const resolvedNow = resolveConfig(config)
+    return JSON.stringify([resolvedNow.provider, resolvedNow.model, resolvedNow.displayName,
+      resolvedNow.contextWindow, resolvedNow.maxTokens, resolvedNow.thinkingBudgets, resolvedNow.defaultEffort])
+  }
+  let published = advertised()
   ctx.on('loader/volatile-update', () => {
     try {
       // Validate the schema-shaped config (the host parse fills every
@@ -78,7 +90,21 @@ export function apply(ctx, config = {}) {
         lastWarned = message
         ctx.logger?.warn?.(message)
       }
+      // A refused combination also stops the catalog re-advertisement: the
+      // adapter refuses to serve it per request anyway, and the next valid
+      // commit re-syncs the menus.
+      return
+    }
+    try {
+      const next = advertised()
+      if (next === published) return
+      // `resolved.provider` is the route array itself; replace() takes routes.
+      registration.replace(resolved.provider)
+      published = next
+    } catch (error) {
+      ctx.logger?.warn?.(`dsh-qwen38-local-qol: re-advertising the model catalog failed: ${error instanceof Error ? error.message : String(error)}`)
     }
   })
-  return ctx.llm.registerAdapter(resolved.provider, adapter)
+  const registration = ctx.llm.registerAdapter(resolved.provider, adapter)
+  return registration
 }
