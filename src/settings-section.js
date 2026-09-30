@@ -20,7 +20,7 @@
  *
  * @module dsh-qwen38-local-qol/settings-section
  */
-import Schema from '@deepseek-ai/schemastery'
+import Schema from "@deepseek-ai/schemastery";
 import {
   DIALECTS,
   DIALECT_LLAMACPP,
@@ -40,16 +40,18 @@ import {
   DEFAULT_TABBYAPI_MAX_TOKENS,
   DEFAULT_TABBYAPI_MODEL,
   DEFAULT_THINKING_BUDGETS,
-} from './config.js'
-import { DEFAULT_TRIM_KNOBS } from './prepare.js'
+} from "./config.js";
+import { DEFAULT_TRIM_KNOBS } from "./prepare.js";
 
 /** The settings namespace this plugin owned pre-0.2.0 (kept for status text and tests). */
-export const NS = 'qwen38-local-qol'
+export const NS = "qwen38-local-qol";
 
 /** Identity modifier for the plain schema variant. */
-const plain = (schema) => schema
-/** Volatile modifier: the leaf is hot-editable (no remount) in 0.2.0 hosts. */
-const volatile = (schema) => schema.volatile()
+const plain = (schema) => schema;
+/** Volatile modifier: the leaf is hot-editable (no remount) in 0.2.0 hosts.
+ * Falls back to identity on older cosmokit (<1.8.5) where `.volatile()` does not exist. */
+const volatile = (schema) =>
+  typeof schema.volatile === "function" ? schema.volatile() : schema;
 
 /**
  * The per-dialect line block. Each server line (llama.cpp, NInfer, TabbyAPI) remembers
@@ -72,11 +74,11 @@ function lineSchema(baseURL, model, contextWindow, maxTokens, budgets, mark) {
   return Schema.object({
     baseURL: mark(Schema.string()).default(baseURL),
     model: mark(Schema.string()).default(model),
-    displayName: mark(Schema.string()).default(''),
+    displayName: mark(Schema.string()).default(""),
     // This line's own server credential (empty = keyless). The top-level
     // `apiKey` mirrors the ACTIVE line and is what the adapter sends
     // (Authorization: Bearer).
-    apiKey: mark(Schema.string()).default(''),
+    apiKey: mark(Schema.string()).default(""),
     contextWindow: mark(Schema.number()).default(contextWindow),
     maxTokens: mark(Schema.number()).default(maxTokens),
     thinkingBudgets: Schema.object({
@@ -90,7 +92,7 @@ function lineSchema(baseURL, model, contextWindow, maxTokens, budgets, mark) {
       keepTurns: mark(Schema.number()).default(DEFAULT_TRIM_KNOBS.keepTurns),
       toolChars: mark(Schema.number()).default(DEFAULT_TRIM_KNOBS.toolChars),
     }),
-  })
+  });
 }
 
 /**
@@ -102,18 +104,46 @@ function buildSchema(mark) {
   return Schema.object({
     // The line selector (empty = the flat top-level form below stays
     // authoritative; a dialect name activates that `lines` block wholesale).
-    line: mark(Schema.string()).default(''),
+    line: mark(Schema.string()).default(""),
     dialect: mark(Schema.string()).default(DIALECT_LLAMACPP),
     baseURL: mark(Schema.string()).default(DEFAULT_LLAMA_BASE_URL),
     model: mark(Schema.string()).default(DEFAULT_LLAMA_MODEL),
-    displayName: mark(Schema.string()).default(''),
+    displayName: mark(Schema.string()).default(""),
     lines: Schema.object({
-      ninfer: lineSchema(DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS, DEFAULT_THINKING_BUDGETS, mark),
-      llamacpp: lineSchema(DEFAULT_LLAMA_BASE_URL, DEFAULT_LLAMA_MODEL, DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS, DEFAULT_THINKING_BUDGETS, mark),
-      tabbyapi: lineSchema(DEFAULT_TABBYAPI_BASE_URL, DEFAULT_TABBYAPI_MODEL, DEFAULT_TABBYAPI_CONTEXT_WINDOW, DEFAULT_TABBYAPI_MAX_TOKENS, DEFAULT_THINKING_BUDGETS, mark),
-      omlx: lineSchema(DEFAULT_OMLX_BASE_URL, DEFAULT_OMLX_MODEL, DEFAULT_OMLX_CONTEXT_WINDOW, DEFAULT_OMLX_MAX_TOKENS, DEFAULT_THINKING_BUDGETS, mark),
+      ninfer: lineSchema(
+        DEFAULT_BASE_URL,
+        DEFAULT_MODEL,
+        DEFAULT_CONTEXT_WINDOW,
+        DEFAULT_MAX_TOKENS,
+        DEFAULT_THINKING_BUDGETS,
+        mark,
+      ),
+      llamacpp: lineSchema(
+        DEFAULT_LLAMA_BASE_URL,
+        DEFAULT_LLAMA_MODEL,
+        DEFAULT_CONTEXT_WINDOW,
+        DEFAULT_MAX_TOKENS,
+        DEFAULT_THINKING_BUDGETS,
+        mark,
+      ),
+      tabbyapi: lineSchema(
+        DEFAULT_TABBYAPI_BASE_URL,
+        DEFAULT_TABBYAPI_MODEL,
+        DEFAULT_TABBYAPI_CONTEXT_WINDOW,
+        DEFAULT_TABBYAPI_MAX_TOKENS,
+        DEFAULT_THINKING_BUDGETS,
+        mark,
+      ),
+      omlx: lineSchema(
+        DEFAULT_OMLX_BASE_URL,
+        DEFAULT_OMLX_MODEL,
+        DEFAULT_OMLX_CONTEXT_WINDOW,
+        DEFAULT_OMLX_MAX_TOKENS,
+        DEFAULT_THINKING_BUDGETS,
+        mark,
+      ),
     }),
-    apiKey: mark(Schema.string()).default(''),
+    apiKey: mark(Schema.string()).default(""),
     contextWindow: mark(Schema.number()).default(DEFAULT_CONTEXT_WINDOW),
     maxTokens: mark(Schema.number()).default(DEFAULT_MAX_TOKENS),
     thinkingBudgets: Schema.object({
@@ -122,7 +152,7 @@ function buildSchema(mark) {
       xhigh: mark(Schema.number()).default(DEFAULT_THINKING_BUDGETS.xhigh),
     }),
     defaultThinkingBudget: mark(Schema.number()).default(16384),
-    defaultEffort: mark(Schema.string()).default('medium'),
+    defaultEffort: mark(Schema.string()).default("medium"),
     thinkingLevelMap: mark(Schema.dict(Schema.string())).default({}),
     includeUsage: mark(Schema.boolean()).default(true),
     summarize: Schema.object({
@@ -142,9 +172,9 @@ function buildSchema(mark) {
     // preset is statically declared by the bundle patch.
     compaction: Schema.object({
       presetGenerated: mark(Schema.boolean()).default(false),
-      defaultPreset: mark(Schema.string()).default('standard'),
+      defaultPreset: mark(Schema.string()).default("standard"),
     }),
-  })
+  });
 }
 
 /**
@@ -153,11 +183,11 @@ function buildSchema(mark) {
  * @returns the schemastery object schema for the section.
  */
 export function sectionSchema() {
-  return buildSchema(plain)
+  return buildSchema(plain);
 }
 
 /** The hot-editable cordis Config for the plugin row. */
-export const Config = buildSchema(volatile)
+export const Config = buildSchema(volatile);
 
 /**
  * Cross-field validation for a resolved config the schema alone cannot
@@ -170,80 +200,141 @@ export function validateSection(value) {
   // Each check only fires on a field the document actually carries (a host
   // parse fills every schema default, so in the 0.2.0 store path everything
   // present is still checked; bare unit-test configs stay silent on absence).
-  if (value.dialect !== undefined && DIALECTS.includes(value.dialect) === false) {
-    throw new Error(`dsh-qwen38-local-qol: dialect must be one of ${DIALECTS.map((d) => `"${d}"`).join(', ')}, got "${value.dialect}"`)
+  if (
+    value.dialect !== undefined &&
+    DIALECTS.includes(value.dialect) === false
+  ) {
+    throw new Error(
+      `dsh-qwen38-local-qol: dialect must be one of ${DIALECTS.map((d) => `"${d}"`).join(", ")}, got "${value.dialect}"`,
+    );
   }
-  if (typeof value.line === 'string' && value.line.trim() !== '' && !DIALECTS.includes(value.line.trim())) {
-    throw new Error(`dsh-qwen38-local-qol: line must be empty or one of ${DIALECTS.map((d) => `"${d}"`).join(', ')}, got "${value.line}"`)
+  if (
+    typeof value.line === "string" &&
+    value.line.trim() !== "" &&
+    !DIALECTS.includes(value.line.trim())
+  ) {
+    throw new Error(
+      `dsh-qwen38-local-qol: line must be empty or one of ${DIALECTS.map((d) => `"${d}"`).join(", ")}, got "${value.line}"`,
+    );
   }
-  const budgets = value.thinkingBudgets ?? {}
+  const budgets = value.thinkingBudgets ?? {};
   for (const [effort, budgetTokens] of Object.entries(budgets)) {
     if (!Number.isInteger(budgetTokens) || budgetTokens <= 0) {
-      throw new Error(`dsh-qwen38-local-qol: thinkingBudgets["${effort}"] must be a positive integer, got ${String(budgetTokens)}`)
+      throw new Error(
+        `dsh-qwen38-local-qol: thinkingBudgets["${effort}"] must be a positive integer, got ${String(budgetTokens)}`,
+      );
     }
   }
-  if (value.defaultThinkingBudget !== undefined && (!Number.isInteger(value.defaultThinkingBudget) || value.defaultThinkingBudget <= 0)) {
-    throw new Error(`dsh-qwen38-local-qol: defaultThinkingBudget must be a positive integer, got ${String(value.defaultThinkingBudget)}`)
+  if (
+    value.defaultThinkingBudget !== undefined &&
+    (!Number.isInteger(value.defaultThinkingBudget) ||
+      value.defaultThinkingBudget <= 0)
+  ) {
+    throw new Error(
+      `dsh-qwen38-local-qol: defaultThinkingBudget must be a positive integer, got ${String(value.defaultThinkingBudget)}`,
+    );
   }
   // The per-line memory carries the same window numbers; validate each line
   // so a hand-edited document cannot park a bad number that later goes live.
   for (const [lineName, line] of Object.entries(value.lines ?? {})) {
-    if (line === undefined || line === null || typeof line !== 'object') continue
-    for (const knob of ['contextWindow', 'maxTokens']) {
-      const raw = line[knob]
+    if (line === undefined || line === null || typeof line !== "object")
+      continue;
+    for (const knob of ["contextWindow", "maxTokens"]) {
+      const raw = line[knob];
       if (raw !== undefined && (!Number.isInteger(raw) || raw <= 0)) {
-        throw new Error(`dsh-qwen38-local-qol: lines.${lineName}.${knob} must be a positive integer, got ${String(raw)}`)
+        throw new Error(
+          `dsh-qwen38-local-qol: lines.${lineName}.${knob} must be a positive integer, got ${String(raw)}`,
+        );
       }
     }
-    for (const [effort, budgetTokens] of Object.entries(line.thinkingBudgets ?? {})) {
+    for (const [effort, budgetTokens] of Object.entries(
+      line.thinkingBudgets ?? {},
+    )) {
       if (!Number.isInteger(budgetTokens) || budgetTokens <= 0) {
-        throw new Error(`dsh-qwen38-local-qol: lines.${lineName}.thinkingBudgets["${effort}"] must be a positive integer, got ${String(budgetTokens)}`)
+        throw new Error(
+          `dsh-qwen38-local-qol: lines.${lineName}.thinkingBudgets["${effort}"] must be a positive integer, got ${String(budgetTokens)}`,
+        );
       }
     }
-    const lineDefaultBudget = line.defaultThinkingBudget
-    if (lineDefaultBudget !== undefined && (!Number.isInteger(lineDefaultBudget) || lineDefaultBudget <= 0)) {
-      throw new Error(`dsh-qwen38-local-qol: lines.${lineName}.defaultThinkingBudget must be a positive integer, got ${String(lineDefaultBudget)}`)
+    const lineDefaultBudget = line.defaultThinkingBudget;
+    if (
+      lineDefaultBudget !== undefined &&
+      (!Number.isInteger(lineDefaultBudget) || lineDefaultBudget <= 0)
+    ) {
+      throw new Error(
+        `dsh-qwen38-local-qol: lines.${lineName}.defaultThinkingBudget must be a positive integer, got ${String(lineDefaultBudget)}`,
+      );
     }
-    const lineImages = line.summarize?.images
-    if (lineImages !== undefined && lineImages !== 'strip' && lineImages !== 'keep') {
-      throw new Error(`dsh-qwen38-local-qol: lines.${lineName}.summarize.images must be "strip" or "keep", got "${lineImages}"`)
+    const lineImages = line.summarize?.images;
+    if (
+      lineImages !== undefined &&
+      lineImages !== "strip" &&
+      lineImages !== "keep"
+    ) {
+      throw new Error(
+        `dsh-qwen38-local-qol: lines.${lineName}.summarize.images must be "strip" or "keep", got "${lineImages}"`,
+      );
     }
-    for (const knob of ['keepTurns', 'toolChars']) {
-      const raw = line.summarize?.[knob]
+    for (const knob of ["keepTurns", "toolChars"]) {
+      const raw = line.summarize?.[knob];
       if (raw !== undefined && (!Number.isInteger(raw) || raw < 0)) {
-        throw new Error(`dsh-qwen38-local-qol: lines.${lineName}.summarize.${knob} must be a non-negative integer, got ${String(raw)}`)
+        throw new Error(
+          `dsh-qwen38-local-qol: lines.${lineName}.summarize.${knob} must be a non-negative integer, got ${String(raw)}`,
+        );
       }
     }
   }
-  if (value.defaultEffort !== undefined && value.defaultEffort !== 'off' && budgets[value.defaultEffort] === undefined) {
-    throw new Error(`dsh-qwen38-local-qol: defaultEffort "${value.defaultEffort}" is not a declared effort ("off" + thinkingBudgets keys)`)
+  if (
+    value.defaultEffort !== undefined &&
+    value.defaultEffort !== "off" &&
+    budgets[value.defaultEffort] === undefined
+  ) {
+    throw new Error(
+      `dsh-qwen38-local-qol: defaultEffort "${value.defaultEffort}" is not a declared effort ("off" + thinkingBudgets keys)`,
+    );
   }
   if (value.summarize !== undefined) {
-    const images = value.summarize?.images
-    if (images !== undefined && images !== 'strip' && images !== 'keep') {
-      throw new Error(`dsh-qwen38-local-qol: summarize.images must be "strip" or "keep", got "${images}"`)
+    const images = value.summarize?.images;
+    if (images !== undefined && images !== "strip" && images !== "keep") {
+      throw new Error(
+        `dsh-qwen38-local-qol: summarize.images must be "strip" or "keep", got "${images}"`,
+      );
     }
-    for (const knob of ['keepTurns', 'toolChars']) {
-      const raw = value.summarize?.[knob]
+    for (const knob of ["keepTurns", "toolChars"]) {
+      const raw = value.summarize?.[knob];
       if (raw !== undefined && (!Number.isInteger(raw) || raw < 0)) {
-        throw new Error(`dsh-qwen38-local-qol: summarize.${knob} must be a non-negative integer, got ${String(raw)}`)
+        throw new Error(
+          `dsh-qwen38-local-qol: summarize.${knob} must be a non-negative integer, got ${String(raw)}`,
+        );
       }
     }
   }
   // The status fields ride the legacy section base only; a 0.2.0 Config has
   // none. Validate them when present so a hand-edited legacy document cannot
   // park junk the old tab would render.
-  if (value.compactThresholdPct !== undefined
-    && (!Number.isInteger(value.compactThresholdPct)
-      || value.compactThresholdPct < 17 || value.compactThresholdPct > 99)) {
-    throw new Error(`dsh-qwen38-local-qol: compactThresholdPct must be an integer 17..99, got ${String(value.compactThresholdPct)}`)
+  if (
+    value.compactThresholdPct !== undefined &&
+    (!Number.isInteger(value.compactThresholdPct) ||
+      value.compactThresholdPct < 17 ||
+      value.compactThresholdPct > 99)
+  ) {
+    throw new Error(
+      `dsh-qwen38-local-qol: compactThresholdPct must be an integer 17..99, got ${String(value.compactThresholdPct)}`,
+    );
   }
   if (value.compaction !== undefined) {
-    if (typeof value.compaction?.presetGenerated !== 'boolean') {
-      throw new Error(`dsh-qwen38-local-qol: compaction.presetGenerated must be a boolean, got ${String(value.compaction?.presetGenerated)}`)
+    if (typeof value.compaction?.presetGenerated !== "boolean") {
+      throw new Error(
+        `dsh-qwen38-local-qol: compaction.presetGenerated must be a boolean, got ${String(value.compaction?.presetGenerated)}`,
+      );
     }
-    if (typeof value.compaction?.defaultPreset !== 'string' || value.compaction.defaultPreset.trim() === '') {
-      throw new Error(`dsh-qwen38-local-qol: compaction.defaultPreset must be a non-empty string, got ${String(value.compaction?.defaultPreset)}`)
+    if (
+      typeof value.compaction?.defaultPreset !== "string" ||
+      value.compaction.defaultPreset.trim() === ""
+    ) {
+      throw new Error(
+        `dsh-qwen38-local-qol: compaction.defaultPreset must be a non-empty string, got ${String(value.compaction?.defaultPreset)}`,
+      );
     }
   }
 }
