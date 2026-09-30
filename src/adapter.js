@@ -79,8 +79,18 @@ export class QwenLocalAdapter extends LlmAdapter {
   constructor(config = {}) {
     super();
     this.#config = config;
-    this.#fetch = config.fetch ?? globalThis.fetch;
-    this.#attachment = config.attachment;
+    const initial = typeof config === "function" ? {} : config;
+    this.#fetch = initial.fetch ?? globalThis.fetch;
+    this.#attachment = initial.attachment;
+  }
+
+  /**
+   * Resolve the live config: call the thunk if the plugin passed one
+   * (hot-reload pattern), or return the direct object (test doubles).
+   * @returns the resolved config object.
+   */
+  #cfg() {
+    return typeof this.#config === "function" ? this.#config() : this.#config;
   }
 
   /**
@@ -95,19 +105,20 @@ export class QwenLocalAdapter extends LlmAdapter {
   }
 
   get #baseURL() {
-    return this.#config.baseURL;
+    return this.#cfg().baseURL;
   }
 
   get #model() {
-    return this.#config.model;
+    return this.#cfg().model;
   }
 
   get #displayName() {
-    return this.#config.displayName || this.#config.model;
+    const cfg = this.#cfg();
+    return cfg.displayName || cfg.model;
   }
 
   get #apiKey() {
-    return this.#config.apiKey || undefined;
+    return this.#cfg().apiKey || undefined;
   }
 
   /** The chat-completions endpoint this adapter posts to. */
@@ -156,7 +167,7 @@ export class QwenLocalAdapter extends LlmAdapter {
   async resolveModel(provider, model) {
     const efforts = [{ id: "off", name: "off" }];
     for (const [id, budgetTokens] of Object.entries(
-      this.#config.thinkingBudgets ?? {},
+      this.#cfg().thinkingBudgets ?? {},
     )) {
       efforts.push({ id, name: id, budgetTokens });
     }
@@ -164,8 +175,8 @@ export class QwenLocalAdapter extends LlmAdapter {
       provider,
       id: model,
       name: model,
-      context: { contextWindow: this.#config.contextWindow },
-      defaultMaxTokens: this.#config.maxTokens,
+      context: { contextWindow: this.#cfg().contextWindow },
+      defaultMaxTokens: this.#cfg().maxTokens,
       // Both local Qwen lines are vision-capable (NInfer --vision; the llama
       // line ships an mmproj), and the image-capability gate resolves this
       // method — not listModels — so the modalities must be declared here too.
@@ -173,7 +184,7 @@ export class QwenLocalAdapter extends LlmAdapter {
       // Declaring the default suppresses the selector's built-in "Default"
       // row, which on this line is redundant with `off`; undeclared requests
       // materialize the default instead of hitting the server default.
-      reasoning: { efforts, defaultEffort: this.#config.defaultEffort },
+      reasoning: { efforts, defaultEffort: this.#cfg().defaultEffort },
     };
   }
 
@@ -192,7 +203,7 @@ export class QwenLocalAdapter extends LlmAdapter {
    * @returns one synchronous price per request image occurrence, or undefined where the capacity is unknown.
    */
   imageRequestPricing(_provider, _model) {
-    const dialect = this.#config.dialect;
+    const dialect = this.#cfg().dialect;
     if (dialect === "tabbyapi" || dialect === "omlx") return undefined;
     const llamacpp = dialect === "llamacpp";
     // The meter prices ImageBlocks ({ type:'image', attachment, offloaded?}):
@@ -225,7 +236,8 @@ export class QwenLocalAdapter extends LlmAdapter {
    */
   async *stream(options) {
     assertRepresentable(options);
-    const imageDataUrls = await resolveImageDataUrls(this.#attachment, options);
+    const attachment = this.#attachment ?? this.#cfg().attachment;
+    const imageDataUrls = await resolveImageDataUrls(attachment, options);
     const url = this.url;
     const response = await this.#post(url, options, imageDataUrls);
 
@@ -267,7 +279,7 @@ export class QwenLocalAdapter extends LlmAdapter {
         method: "POST",
         headers: requestHeaders(attributionHeaders(), this.#apiKey),
         body: JSON.stringify(
-          buildQwenBody(options, this.#model, this.#config, imageDataUrls),
+          buildQwenBody(options, this.#model, this.#cfg(), imageDataUrls),
         ),
         signal: options.signal,
       });

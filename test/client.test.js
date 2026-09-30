@@ -11,30 +11,42 @@ function fakeCtx(overrides = {}) {
   const describeCalls = [];
   const updateCalls = [];
   const state = {
-    namespaces: [{
-      ns: 'qwen38',
-      revision: 7,
-      value: {
-        dialect: 'ninfer',
-        baseURL: 'http://localhost:8082/v1',
-        model: 'qwen3.8-27b-nvfp4',
-        displayName: 'Qwen3.8-27B',
-        apiKey: '',
-        contextWindow: 229376,
-        maxTokens: 24576,
-        thinkingBudgets: { low: 4096, medium: 8192, xhigh: 16384 },
-        defaultEffort: 'medium',
-        thinkingLevelMap: {},
-        includeUsage: true,
-        summarize: { images: 'strip', keepTurns: 5, toolChars: 2000 },
-        compaction: { presetGenerated: true, defaultPreset: 'qwen38' },
+    namespaces: [
+      {
+        ns: "qwen38",
+        revision: 7,
+        value: {
+          dialect: "ninfer",
+          baseURL: "http://localhost:8082/v1",
+          model: "qwen3.8-27b-nvfp4",
+          displayName: "Qwen3.8-27B",
+          apiKey: "",
+          contextWindow: 229376,
+          maxTokens: 24576,
+          thinkingBudgets: { low: 4096, medium: 8192, xhigh: 16384 },
+          defaultEffort: "medium",
+          thinkingLevelMap: {},
+          includeUsage: true,
+          summarize: { images: "strip", keepTurns: 5, toolChars: 2000 },
+          compaction: { presetGenerated: true, defaultPreset: "qwen38" },
+        },
       },
-    }, {
-      ns: 'agent-preset-registry',
-      revision: 3,
-      value: { default: 'standard', selectedDefault: undefined },
-    }, ...(overrides.defaultModel ? [{ ns: 'agent-default-model', revision: 1, value: overrides.defaultModel }] : [])],
-  }
+      {
+        ns: "agent-preset-registry",
+        revision: 3,
+        value: { default: "standard", selectedDefault: undefined },
+      },
+      ...(overrides.defaultModel
+        ? [
+            {
+              ns: "agent-default-model",
+              revision: 1,
+              value: overrides.defaultModel,
+            },
+          ]
+        : []),
+    ],
+  };
   const ctx = {
     locale: { getSnapshot: () => ({ active: "zh" }) },
     slots: {
@@ -48,12 +60,15 @@ function fakeCtx(overrides = {}) {
         describe: async () => {
           describeCalls.push(undefined);
           return {
-            writable: true,
-            hasDocument: true,
-            namespaces: state.namespaces.map((entry) => ({
-              ...entry,
-              value: { ...entry.value },
-            })),
+            ok: true,
+            value: {
+              writable: true,
+              hasDocument: true,
+              namespaces: state.namespaces.map((entry) => ({
+                ...entry,
+                value: { ...entry.value },
+              })),
+            },
           };
         },
         update: async (ns, patch, revision) => {
@@ -61,13 +76,17 @@ function fakeCtx(overrides = {}) {
           const index = state.namespaces.findIndex((entry) => entry.ns === ns);
           const target = state.namespaces[index];
           if (overrides.conflictNext && revision !== target.revision) {
-            return { ok: false, error: { code: 'settings-conflict', message: 'stale revision' } }
+            return {
+              ok: false,
+              error: { code: "settings-conflict", message: "stale revision" },
+            };
           }
           state.namespaces[index] = {
             ...target,
             revision: target.revision + 1,
             value: { ...target.value, ...patch },
           };
+          return { ok: true, value: { ...state.namespaces[index] } };
         },
       },
     },
@@ -188,23 +207,25 @@ test("client: registers one settings.section page with a localized label", () =>
   assert.equal(typeof face.save, "function");
 });
 
-test('client: the inject face loads the namespace view and writes with the held revision', async () => {
-  const { ctx, updateCalls } = fakeCtx()
-  let captured = null
-  ctx.slots.register = (option) => { captured = option.inject() }
-  client.apply(ctx)
-  const loaded = await captured.load()
-  assert.equal(loaded.ok, true)
-  assert.equal(loaded.value.ns, 'qwen38')
-  assert.equal(loaded.value.revision, 7)
+test("client: the inject face loads the namespace view and writes with the held revision", async () => {
+  const { ctx, updateCalls } = fakeCtx();
+  let captured = null;
+  ctx.slots.register = (option) => {
+    captured = option.inject();
+  };
+  client.apply(ctx);
+  const loaded = await captured.load();
+  assert.equal(loaded.ok, true);
+  assert.equal(loaded.value.ns, "qwen38");
+  assert.equal(loaded.value.revision, 7);
 
-  const saved = await captured.save(loaded.value, { model: 'new-alias' })
-  assert.equal(saved.ok, true)
-  assert.equal(saved.value.revision, 8)
-  assert.equal(updateCalls[0].ns, 'qwen38')
-  assert.equal(updateCalls[0].revision, 7)
-  assert.equal(updateCalls[0].patch.model, 'new-alias')
-})
+  const saved = await captured.save(loaded.value, { model: "new-alias" });
+  assert.equal(saved.ok, true);
+  assert.equal(saved.value.revision, 8);
+  assert.equal(updateCalls[0].ns, "qwen38");
+  assert.equal(updateCalls[0].revision, 7);
+  assert.equal(updateCalls[0].patch.model, "new-alias");
+});
 
 test("client: a stale-revision write answers a conflict the caller can re-load", async () => {
   const { ctx, state } = fakeCtx({ conflictNext: true });
@@ -215,88 +236,114 @@ test("client: a stale-revision write answers a conflict the caller can re-load",
   client.apply(ctx);
   const loaded = await captured.load();
   // An external editor moves the namespace past the held revision.
-  state.namespaces[0].revision = 9
-  const saved = await captured.save(loaded.value, { model: 'stale-write' })
-  assert.equal(saved.ok, false)
-  assert.equal(saved.code, 'settings-conflict')
-  const fresh = await captured.load()
-  assert.equal(fresh.value.revision, 9)
-})
+  state.namespaces[0].revision = 9;
+  const saved = await captured.save(loaded.value, { model: "stale-write" });
+  assert.equal(saved.ok, false);
+  assert.equal(saved.code, "settings-conflict");
+  const fresh = await captured.load();
+  assert.equal(fresh.value.revision, 9);
+});
 
-test('client: saving a line change repoints the official default-model row when it rides this provider', async () => {
-  const { ctx, updateCalls, state } = fakeCtx({ defaultModel: { provider: 'qwen38', model: 'qwen3.8-27b', reasoningEffort: 'medium' } })
-  let captured = null
-  ctx.slots.register = (option) => { captured = option.inject() }
-  client.apply(ctx)
-  const loaded = await captured.load()
-  const saved = await captured.save(loaded.value, { model: 'Qwen3.8-Flash-Next' })
-  assert.equal(saved.ok, true)
-  assert.equal(updateCalls.length, 2)
-  assert.equal(updateCalls[1].ns, 'agent-default-model')
-  assert.deepEqual(updateCalls[1].patch, { model: 'Qwen3.8-Flash-Next' })
-  assert.equal(updateCalls[1].revision, 1)
-  assert.equal(state.namespaces[2].value.model, 'Qwen3.8-Flash-Next')
+test("client: saving a line change repoints the official default-model row when it rides this provider", async () => {
+  const { ctx, updateCalls, state } = fakeCtx({
+    defaultModel: {
+      provider: "qwen38",
+      model: "qwen3.8-27b",
+      reasoningEffort: "medium",
+    },
+  });
+  let captured = null;
+  ctx.slots.register = (option) => {
+    captured = option.inject();
+  };
+  client.apply(ctx);
+  const loaded = await captured.load();
+  const saved = await captured.save(loaded.value, {
+    model: "Qwen3.8-Flash-Next",
+  });
+  assert.equal(saved.ok, true);
+  assert.equal(updateCalls.length, 2);
+  assert.equal(updateCalls[1].ns, "agent-default-model");
+  assert.deepEqual(updateCalls[1].patch, { model: "Qwen3.8-Flash-Next" });
+  assert.equal(updateCalls[1].revision, 1);
+  assert.equal(state.namespaces[2].value.model, "Qwen3.8-Flash-Next");
   // Effort and provider ride untouched.
-  assert.equal(state.namespaces[2].value.reasoningEffort, 'medium')
-  assert.equal(state.namespaces[2].value.provider, 'qwen38')
-})
+  assert.equal(state.namespaces[2].value.reasoningEffort, "medium");
+  assert.equal(state.namespaces[2].value.provider, "qwen38");
+});
 
-test('client: the default-model sync never touches another provider pick or repeats an equal model', async () => {
-  const { ctx, updateCalls } = fakeCtx({ defaultModel: { provider: 'deepseek', model: 'deepseek-v4-pro' } })
-  let captured = null
-  ctx.slots.register = (option) => { captured = option.inject() }
-  client.apply(ctx)
-  const loaded = await captured.load()
-  await captured.save(loaded.value, { model: 'Qwen3.8-Flash-Next' })
-  assert.equal(updateCalls.length, 1)
-  assert.equal(updateCalls[0].ns, 'qwen38')
-})
+test("client: the default-model sync never touches another provider pick or repeats an equal model", async () => {
+  const { ctx, updateCalls } = fakeCtx({
+    defaultModel: { provider: "deepseek", model: "deepseek-v4-pro" },
+  });
+  let captured = null;
+  ctx.slots.register = (option) => {
+    captured = option.inject();
+  };
+  client.apply(ctx);
+  const loaded = await captured.load();
+  await captured.save(loaded.value, { model: "Qwen3.8-Flash-Next" });
+  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls[0].ns, "qwen38");
+});
 
-test('client: an already-matching default-model row is not rewritten (no-op write discipline)', async () => {
-  const { ctx, updateCalls } = fakeCtx({ defaultModel: { provider: 'qwen38', model: 'Qwen3.8-Flash-Next' } })
-  let captured = null
-  ctx.slots.register = (option) => { captured = option.inject() }
-  client.apply(ctx)
-  const loaded = await captured.load()
-  await captured.save(loaded.value, { model: 'Qwen3.8-Flash-Next' })
-  assert.equal(updateCalls.length, 1)
-  assert.equal(updateCalls[0].ns, 'qwen38')
-})
+test("client: an already-matching default-model row is not rewritten (no-op write discipline)", async () => {
+  const { ctx, updateCalls } = fakeCtx({
+    defaultModel: { provider: "qwen38", model: "Qwen3.8-Flash-Next" },
+  });
+  let captured = null;
+  ctx.slots.register = (option) => {
+    captured = option.inject();
+  };
+  client.apply(ctx);
+  const loaded = await captured.load();
+  await captured.save(loaded.value, { model: "Qwen3.8-Flash-Next" });
+  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls[0].ns, "qwen38");
+});
 
-test('toDraft: a fresh section (no user layer) ships the production defaults pre-filled', () => {
-  const draft = client.toDraft({ dialect: 'ninfer', baseURL: 'http://localhost:8082/v1', model: 'qwen3.8-27b-nvfp4' })
-  assert.equal(draft.contextWindow, '262144')
-  assert.equal(draft.maxTokens, '52428')
-  assert.equal(draft.low, '4096')
-  assert.equal(draft.medium, '8192')
-  assert.equal(draft.xhigh, '16384')
-  assert.equal(draft.defaultBudget, '16384')
-  assert.equal(draft.images, 'strip')
-  assert.equal(draft.keepTurns, '5')
-  assert.equal(draft.toolChars, '2000')
+test("toDraft: a fresh section (no user layer) ships the production defaults pre-filled", () => {
+  const draft = client.toDraft({
+    dialect: "ninfer",
+    baseURL: "http://localhost:8082/v1",
+    model: "qwen3.8-27b-nvfp4",
+  });
+  assert.equal(draft.contextWindow, "262144");
+  assert.equal(draft.maxTokens, "52428");
+  assert.equal(draft.low, "4096");
+  assert.equal(draft.medium, "8192");
+  assert.equal(draft.xhigh, "16384");
+  assert.equal(draft.defaultBudget, "16384");
+  assert.equal(draft.images, "strip");
+  assert.equal(draft.keepTurns, "5");
+  assert.equal(draft.toolChars, "2000");
   // Legacy shape (no user.lines): the active line migrates from the top level.
   assert.equal(draft.baseURL, "http://localhost:8082/v1");
   assert.equal(draft.model, "qwen3.8-27b-nvfp4");
   // The top-level credential defaults to empty (keyless = no Authorization header).
   assert.equal(draft.apiKey, "");
   // The other lines park at their built-in defaults.
-  assert.equal(draft.lines.llamacpp.baseURL, '')
-  assert.equal(draft.lines.llamacpp.contextWindow, '262144')
-  assert.equal(draft.lines.tabbyapi.baseURL, '')
-  assert.equal(draft.lines.tabbyapi.contextWindow, '262144')
-  assert.equal(draft.lines.tabbyapi.maxTokens, '52428')
-  assert.equal(draft.lines.omlx.baseURL, '')
-  assert.equal(draft.lines.omlx.contextWindow, '262144')
-  assert.equal(draft.lines.omlx.maxTokens, '52428')
-  assert.equal(draft.lines.ninfer.xhigh, '16384')
+  assert.equal(draft.lines.llamacpp.baseURL, "");
+  assert.equal(draft.lines.llamacpp.contextWindow, "262144");
+  assert.equal(draft.lines.tabbyapi.baseURL, "");
+  assert.equal(draft.lines.tabbyapi.contextWindow, "262144");
+  assert.equal(draft.lines.tabbyapi.maxTokens, "52428");
+  assert.equal(draft.lines.omlx.baseURL, "");
+  assert.equal(draft.lines.omlx.contextWindow, "262144");
+  assert.equal(draft.lines.omlx.maxTokens, "52428");
+  assert.equal(draft.lines.ninfer.xhigh, "16384");
   // The trigger point is shared across lines and ships at 80 percent.
-  assert.equal(draft.compactPct, '80')
-})
+  assert.equal(draft.compactPct, "80");
+});
 
-test('toDraft: a saved trigger percent rides the draft', () => {
-  const draft = client.toDraft({ dialect: 'llamacpp', user: { lines: {} }, compactThresholdPct: 90 })
-  assert.equal(draft.compactPct, '90')
-})
+test("toDraft: a saved trigger percent rides the draft", () => {
+  const draft = client.toDraft({
+    dialect: "llamacpp",
+    user: { lines: {} },
+    compactThresholdPct: 90,
+  });
+  assert.equal(draft.compactPct, "90");
+});
 
 test("toDraft: a new-shape section reads the active line from lines and parks the other", () => {
   const value = {
