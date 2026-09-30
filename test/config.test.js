@@ -3,6 +3,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { createVolatile, updateVolatile } from '@deepseek-ai/cosmokit'
 import { resolveConfig, DEFAULT_BASE_URL, DEFAULT_LLAMA_BASE_URL, DEFAULT_MODEL, DEFAULT_LLAMA_MODEL, DEFAULT_THINKING_BUDGETS } from '../src/config.js'
 
 test('resolveConfig: built-in defaults open on the general default (llama.cpp line)', () => {
@@ -143,4 +144,29 @@ test('resolveConfig: empty or unknown line keeps the legacy flat form authoritat
   const resolved = resolveConfig({ line: 'omlx', dialect: 'ninfer', baseURL: 'http://flat/v1' }, {})
   assert.equal(resolved.baseURL, 'http://flat/v1')
   assert.equal(resolved.dialect, 'ninfer')
+})
+
+test('resolveConfig: volatile leaf refs (0.2.0 hosts) unwrap, nested included, and track hot commits', () => {
+  // The parsed Config a 0.2.0 host hands the plugin: every .volatile() leaf
+  // (flat and nested) is a live ref object, not a primitive.
+  const config = {
+    dialect: createVolatile('llamacpp'),
+    model: createVolatile('qwen3.8-27b'),
+    displayName: createVolatile(''),
+    maxTokens: createVolatile(52428),
+    thinkingBudgets: { low: createVolatile(1024), medium: createVolatile(8192), xhigh: createVolatile(16384) },
+    lines: { ninfer: { model: createVolatile('ninfer-line'), apiKey: createVolatile('') } },
+  }
+  const resolved = resolveConfig(config, {})
+  assert.equal(resolved.model, 'qwen3.8-27b')
+  assert.equal(resolved.maxTokens, 52428)
+  assert.equal(resolved.thinkingBudgets.medium, 8192)
+  // A hot commit mutates the ref in place; the next read sees the new value
+  // (this is the line-switch the settings tab performs).
+  updateVolatile(config.model, createVolatile('Qwen3.8-Flash-Next'))
+  assert.equal(resolveConfig(config, {}).model, 'Qwen3.8-Flash-Next')
+  // Nested refs unwrap in the line-selector form too.
+  const switched = resolveConfig({ ...config, line: createVolatile('ninfer') }, {})
+  assert.equal(switched.dialect, 'ninfer')
+  assert.equal(switched.model, 'ninfer-line')
 })
