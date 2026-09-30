@@ -70,6 +70,16 @@ test('prepareSummaryRegion: keep images when configured', () => {
   assert.equal(prepared[0].content[0].type, 'image')
 })
 
+test('prepareSummaryRegion: 0.2.0 tool-role messages get capped and stripped in place (unwrapped blocks)', () => {
+  const long = 'y'.repeat(2600)
+  const toolMessage = { role: 'tool', toolCallId: 'c1', content: [text(long), image()] }
+  const prepared = prepareSummaryRegion([toolMessage], DEFAULT_TRIM_KNOBS)
+  assert.equal(prepared[0].role, 'tool')
+  const capped = prepared[0].content[0].text
+  assert.equal(capped.length, 2000 + '\n… [600 more chars elided]'.length)
+  assert.deepEqual(prepared[0].content[1], { type: 'text', text: '[image: a.png 100x50]' })
+})
+
 test('prepareSummaryRegion: caps oversized tool results with an elided marker, nested included', () => {
   const long = 'x'.repeat(2600)
   const messages = [msg('user', [toolResult('c1', long)])]

@@ -215,6 +215,36 @@ test('toOpenAiMessages: user tool-result blocks ride as tool messages, error mar
   ])
 })
 
+test('toOpenAiMessages: 0.2.0 first-class tool-role messages (unwrapped blocks) project with their pairing', () => {
+  const image = { type: 'image', attachment: { name: 'shot.png', mediaType: 'image/png', width: 640, height: 480 } }
+  const options = {
+    messages: [
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', id: 'call-9', name: 'pwsh', arguments: '{"command":"echo hi"}' }],
+      },
+      // The 0.2.0 ToolResultMessage shape: blocks unwrapped, pairing + error
+      // flag on the message itself.
+      { role: 'tool', toolCallId: 'call-9', source: { kind: 'tool', callId: 'call-9' }, content: [{ type: 'text', text: 'hi' }] },
+      { role: 'tool', toolCallId: 'call-10', isError: true, content: [{ type: 'text', text: 'boom' }, image] },
+    ],
+  }
+  const urls = new Map([[image, 'data:image/png;base64,QUJD']])
+  assert.deepEqual(toOpenAiMessages(options, urls), [
+    {
+      role: 'assistant',
+      content: null,
+      tool_calls: [{ id: 'call-9', type: 'function', function: { name: 'pwsh', arguments: '{"command":"echo hi"}' } }],
+    },
+    { role: 'tool', tool_call_id: 'call-9', content: 'hi' },
+    {
+      role: 'tool',
+      tool_call_id: 'call-10',
+      content: [{ type: 'text', text: '[error] boom' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,QUJD' } }],
+    },
+  ])
+})
+
 test('toOpenAiMessages: a nested tool-result image rides as image_url when resolved, placeholder otherwise', () => {
   const image = { type: 'image', attachment: { name: 'shot.png', mediaType: 'image/png', width: 640, height: 480 } }
   const options = {

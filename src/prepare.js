@@ -114,12 +114,19 @@ export function prepareSummaryRegion(messages, knobs = DEFAULT_TRIM_KNOBS) {
     prepared = prepared.map((message) => ({ ...message, content: replaceImageBlocks(message.content) }))
   }
   if (knobs.toolChars > 0) {
-    prepared = prepared.map((message) => ({
-      ...message,
-      content: message.content.map((block) => (
-        block.type === 'tool-result' ? { ...block, content: capToolResultContent(block.content, knobs.toolChars) } : block
-      )),
-    }))
+    prepared = prepared.map((message) => (
+      // 0.2.0 shape: a `role: 'tool'` message's blocks are the tool result
+      // itself - cap them in place. The wrapped `tool-result` block form is
+      // kept for pre-0.2.0 history replayed into the region.
+      message.role === 'tool'
+        ? { ...message, content: capToolResultContent(message.content, knobs.toolChars) }
+        : {
+          ...message,
+          content: message.content.map((block) => (
+            block.type === 'tool-result' ? { ...block, content: capToolResultContent(block.content, knobs.toolChars) } : block
+          )),
+        }
+    ))
   }
   return prepared
 }

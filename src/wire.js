@@ -162,6 +162,38 @@ function messageContent(message, imageDataUrls = new Map()) {
  */
 function toolResultMessages(message, imageDataUrls = new Map()) {
   const out = []
+  // 0.2.0 shape: the tool result is a first-class `role: 'tool'` message whose
+  // content blocks ride unwrapped (text/image only; the call pairing lives on
+  // the message). Emit it directly, then keep the legacy scan below for the
+  // pre-0.2.0 wrapped `tool-result` block form (migrated session history).
+  if (message.role === 'tool' && typeof message.toolCallId === 'string') {
+    let text = ''
+    const media = []
+    for (const inner of message.content ?? []) {
+      if (inner.type === 'text') {
+        text += inner.text
+      } else if (inner.type === 'image') {
+        const dataUrl = imageDataUrls.get(inner)
+        if (dataUrl !== undefined) {
+          media.push({ type: 'image_url', image_url: { url: dataUrl } })
+        } else {
+          const { name, mediaType, width, height } = inner.attachment ?? {}
+          text += `[image: ${name ?? mediaType} ${width}x${height}]`
+        }
+      }
+    }
+    text = scrubControlTokens(text)
+    const payload = message.isError ? `[error] ${text}` : text
+    if (media.length === 0) {
+      out.push({ role: 'tool', tool_call_id: message.toolCallId, content: payload })
+    } else {
+      const content = []
+      if (payload !== '') content.push({ type: 'text', text: payload })
+      content.push(...media)
+      out.push({ role: 'tool', tool_call_id: message.toolCallId, content })
+    }
+    return out
+  }
   for (const block of message.content ?? []) {
     if (block.type !== 'tool-result') continue
     let text = ''
