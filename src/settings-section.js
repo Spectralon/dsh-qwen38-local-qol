@@ -130,6 +130,13 @@ function buildSchema(mark) {
       keepTurns: mark(Schema.number()).default(DEFAULT_TRIM_KNOBS.keepTurns),
       toolChars: mark(Schema.number()).default(DEFAULT_TRIM_KNOBS.toolChars),
     }),
+    // Where automatic pressure compaction fires, as a percent of the active
+    // line's context window: the compaction backend reads it at every trigger
+    // evaluation and feeds the engine's thresholdRatio (hot, no restart). The
+    // floor 17 keeps the stock retainRatio 0.16 strictly below the threshold;
+    // the ceiling 99 leaves the line's own output reservation to cap the
+    // effective point (the engine takes `min(window x ratio, window - output)`).
+    compactThresholdPct: mark(Schema.number()).default(80),
     // The compaction wiring status rode the pre-0.2.0 section base (the tab
     // rendered it); the 0.2.0 Config does not carry status fields - the
     // preset is statically declared by the bundle patch.
@@ -226,6 +233,11 @@ export function validateSection(value) {
   // The status fields ride the legacy section base only; a 0.2.0 Config has
   // none. Validate them when present so a hand-edited legacy document cannot
   // park junk the old tab would render.
+  if (value.compactThresholdPct !== undefined
+    && (!Number.isInteger(value.compactThresholdPct)
+      || value.compactThresholdPct < 17 || value.compactThresholdPct > 99)) {
+    throw new Error(`dsh-qwen38-local-qol: compactThresholdPct must be an integer 17..99, got ${String(value.compactThresholdPct)}`)
+  }
   if (value.compaction !== undefined) {
     if (typeof value.compaction?.presetGenerated !== 'boolean') {
       throw new Error(`dsh-qwen38-local-qol: compaction.presetGenerated must be a boolean, got ${String(value.compaction?.presetGenerated)}`)

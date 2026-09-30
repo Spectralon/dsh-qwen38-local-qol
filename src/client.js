@@ -78,6 +78,9 @@ const COPY = {
     notFound: 'This plugin is not registered a settings section on the host side (restart DSH web after installing the plugin, then open this page again).',
     conflict: 'Someone else changed these settings while you were editing. Your edits were discarded; the current values are shown.',
     invalidNumber: 'Every number field must be a positive whole number.',
+    compactTrigger: 'Compaction trigger',
+    compactTriggerHint: 'Automatic compaction fires at window × this ratio; the slider caps where the line output reservation leaves room (currently {cap}%). Current usage lives in the chat page meter.',
+    invalidPct: 'Trigger percent must be a whole number 17..99.',
     remoteError: 'Settings request failed: ',
     compactionNotSet: 'The qwen38 preset is not declared by the installed plugin bundle (reinstall or update the plugin, then restart dsh web).',
     compactionActive: 'Local compaction is active for new sessions (default preset: qwen38).',
@@ -120,6 +123,9 @@ const COPY = {
     notFound: '宿主侧未注册该插件的设置命名空间（装完插件后重启 DSH web，再打开本页面）。',
     conflict: '编辑期间他人修改了这些设置。你的改动已丢弃，当前显示的是最新值。',
     invalidNumber: '所有数字字段必须是正整数。',
+    compactTrigger: '压缩触发点',
+    compactTriggerHint: '自动压缩在 窗口 × 该比例 处触发；滑块上限已按输出上限预留（当前上限 {cap}%）。当前用量看聊天页顶部的上下文计量。',
+    invalidPct: '触发比例必须是 17 到 99 的整数。',
     remoteError: '设置请求失败：',
     compactionNotSet: 'qwen38 预设未由已安装的插件 bundle 声明（重装或更新插件后重启 dsh web）。',
     compactionActive: '本地压缩对新会话生效（默认预设：qwen38）。',
@@ -273,6 +279,9 @@ export function toDraft(value) {
     // keyless, the wire omits the Authorization header); every line keeps its
     // own copy under `lines`.
     apiKey: active.apiKey,
+    // Not a line field: the trigger ratio is shared across lines; each line's
+    // own context window rescales the token point the ratio lands on.
+    compactPct: String(value.compactThresholdPct ?? 80),
   }
 }
 
@@ -348,6 +357,11 @@ function QwenLocalSectionEntry({ useLocale, load, save }) {
       setState((s) => ({ ...s, error: t.invalidNumber }))
       return
     }
+    const compactPct = Number.parseInt(draft.compactPct, 10)
+    if (!Number.isInteger(compactPct) || compactPct < 17 || compactPct > 99) {
+      setState((s) => ({ ...s, error: t.invalidPct }))
+      return
+    }
     setState((s) => ({ ...s, busy: true, error: null }))
     // The top-level fields are what the adapter and the compaction backend
     // read (the active line); `lines` persists every line — connection, window
@@ -419,6 +433,7 @@ function QwenLocalSectionEntry({ useLocale, load, save }) {
         keepTurns: Number.parseInt(draft.keepTurns, 10),
         toolChars: Number.parseInt(draft.toolChars, 10),
       },
+      compactThresholdPct: compactPct,
     }
     const result = await save(view, patch)
     if (result.ok) {
@@ -447,6 +462,17 @@ function QwenLocalSectionEntry({ useLocale, load, save }) {
     defaultPreset: state.agentPresets?.defaultPreset ?? view.value.compaction?.defaultPreset ?? 'standard',
   }
   const ninfer = draft.dialect === 'ninfer'
+  // Trigger slider geometry: the token point of the current percent and the
+  // percent cap left once the active line's output reservation is subtracted
+  // (recomputed live while the window/output inputs are edited).
+  const windowTokens = /^\d+$/.test(draft.contextWindow) ? Number.parseInt(draft.contextWindow, 10) : 0
+  const outputTokens = /^\d+$/.test(draft.maxTokens) ? Number.parseInt(draft.maxTokens, 10) : 0
+  const triggerCapPct = windowTokens > 0 && outputTokens > 0 && outputTokens < windowTokens
+    ? Math.max(17, Math.min(99, Math.floor(((windowTokens - outputTokens) * 100) / windowTokens)))
+    : 99
+  const compactPctDraft = /^\d+$/.test(draft.compactPct) ? Number.parseInt(draft.compactPct, 10) : 80
+  const compactPctClamped = Math.min(Math.max(17, compactPctDraft), triggerCapPct)
+  const triggerTokens = Math.round((windowTokens * compactPctClamped) / 100)
   return React.createElement('div', { className: 'qol' },
     React.createElement('h2', { className: 'qol-title' }, t.title),
     state.error !== null
@@ -529,6 +555,29 @@ function QwenLocalSectionEntry({ useLocale, load, save }) {
         compactionStatusCopy(compaction, t),
       ),
       React.createElement('p', { className: 'qol-hint' }, t.compactionHint),
+      // The live trigger slider: percent of the active line's window; its cap
+      // tracks the window/output inputs above, and the saved percent is hot
+      // (the compaction backend re-reads it at every trigger evaluation).
+      React.createElement('div', { className: 'qol-field' },
+        React.createElement('div', { className: 'qol-switchHead' },
+          React.createElement('span', { className: 'qol-switchLabel' }, t.compactTrigger),
+          React.createElement('span', { className: 'qol-sliderValue' },
+            windowTokens > 0
+              ? `${compactPctClamped}% · ~${(triggerTokens / 1000).toFixed(1)}K / ${(windowTokens / 1000).toFixed(0)}K`
+              : `${compactPctClamped}%`),
+        ),
+        React.createElement('input', {
+          className: 'qol-slider',
+          type: 'range',
+          min: 17,
+          max: triggerCapPct,
+          step: 1,
+          value: compactPctClamped,
+          'aria-label': t.compactTrigger,
+          onChange: (e) => { setDraft({ compactPct: e.target.value }) },
+        }),
+        React.createElement('p', { className: 'qol-hint' }, t.compactTriggerHint.replace('{cap}', String(triggerCapPct))),
+      ),
       React.createElement('div', { className: 'qol-field' },
         React.createElement('div', { className: 'qol-switchHead' },
           React.createElement('span', { className: 'qol-switchLabel' }, t.summarizeImages),

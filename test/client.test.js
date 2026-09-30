@@ -217,6 +217,13 @@ test('toDraft: a fresh section (no user layer) ships the production defaults pre
   assert.equal(draft.lines.omlx.contextWindow, '262144')
   assert.equal(draft.lines.omlx.maxTokens, '52428')
   assert.equal(draft.lines.ninfer.xhigh, '16384')
+  // The trigger point is shared across lines and ships at 80 percent.
+  assert.equal(draft.compactPct, '80')
+})
+
+test('toDraft: a saved trigger percent rides the draft', () => {
+  const draft = client.toDraft({ dialect: 'llamacpp', user: { lines: {} }, compactThresholdPct: 90 })
+  assert.equal(draft.compactPct, '90')
 })
 
 test('toDraft: a new-shape section reads the active line from lines and parks the other', () => {

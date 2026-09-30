@@ -24,6 +24,19 @@ test('NS: the plugin owns one lowercase hyphenated namespace', () => {
   assert.equal(NS, 'qwen38-local-qol')
 })
 
+test('sectionSchema: the compaction trigger point defaults to 80 percent', () => {
+  const resolved = sectionSchema()({})
+  assert.equal(resolved.compactThresholdPct, 80)
+})
+
+test('validateSection: an out-of-range compaction trigger fails loud', () => {
+  assert.throws(() => validateSection({ compactThresholdPct: 16 }), /compactThresholdPct/)
+  assert.throws(() => validateSection({ compactThresholdPct: 100 }), /compactThresholdPct/)
+  assert.throws(() => validateSection({ compactThresholdPct: 80.5 }), /compactThresholdPct/)
+  validateSection({ compactThresholdPct: 17 })
+  validateSection({ compactThresholdPct: 99 })
+})
+
 test('sectionSchema: a fully-default value opens on the general default (llama.cpp line)', () => {
   const schema = sectionSchema()
   const resolved = schema({})
