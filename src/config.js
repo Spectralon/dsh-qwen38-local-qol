@@ -6,6 +6,28 @@
  * @module dsh-qwen38-local-qol/config
  */
 
+import { isVolatile } from '@deepseek-ai/cosmokit'
+
+/**
+ * Unwrap the parsed plugin Config for plain reads. On 0.2.0 hosts every
+ * `.volatile()` leaf arrives as a live reference object (`{ get() }`, updated
+ * in place by hot settings commits), not a primitive - reading one directly
+ * stringifies to `[object Object]`. This is the official `plainOptions`
+ * recipe (llm-deepseek/config.ts), applied recursively because the plugin
+ * marks its nested line-block and budgets leaves volatile too.
+ * @param value - a parsed config value (may be a volatile ref).
+ * @returns the plain value; refs resolved through their live `get()`.
+ */
+export function plainConfig(value) {
+  if (isVolatile(value)) return value.get()
+  if (Array.isArray(value)) return value.map((item) => plainConfig(item))
+  if (value !== null && typeof value === 'object'
+    && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, plainConfig(item)]))
+  }
+  return value
+}
+
 /**
  * NInfer line default server address when nothing configures one: the
  * standard local llama port, shared with the llama.cpp line's default (a
@@ -157,6 +179,20 @@ function budgetMap(value, fallback) {
  * @returns the resolved provider configuration.
  */
 export function resolveConfig(config = {}, env = process.env) {
+  // 0.2.0 hosts hand the plugin volatile leaf refs; normalize once for every
+  // downstream read (tests pass plain objects, which pass through untouched).
+  config = plainConfig(config)
+  // Line-selector form (the profile-config store): a non-empty `line` names
+  // one per-dialect block and its knobs become the active ones (dialect forced
+  // to the block), so switching lines in the settings form is a single field
+  // edit. An empty/absent `line` keeps the legacy flat form authoritative (the
+  // shipped patch row only carries top-level fields) - a byte-compatible base.
+  if (typeof config.line === 'string' && config.line.trim() !== '') {
+    const block = config.lines?.[config.line.trim()]
+    if (block !== undefined && block !== null && typeof block === 'object') {
+      config = { ...config, ...block, dialect: config.line.trim() }
+    }
+  }
   const dialect = setting(config.dialect, env.DSH_QWEN38_DIALECT, DIALECT_LLAMACPP)
   if (DIALECTS.includes(dialect) === false) {
     throw new Error(`dsh-qwen38-local-qol: dialect must be one of ${DIALECTS.map((d) => `"${d}"`).join(', ')}, got "${dialect}"`)

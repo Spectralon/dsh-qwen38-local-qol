@@ -23,7 +23,7 @@ You can also pin a specific release: add a tag to the spec (`#v0.2.0` or any pas
 ## What it supports
 
 - **Per-request thinking budgets.** The llama.cpp line sends the selected per-effort budget on every request (`reasoning_effort` + `reasoning_budget_tokens`, overrides the server's `--reasoning-budget`); the NInfer engine reads its single thinking budget from the server startup flag (`--default-thinking-budget`); the settings tab shows that as a note on the NInfer line (no input), while `defaultThinkingBudget` stays valid as a headless/env config field; the TabbyAPI line accepts both natively; the oMLX line (Apple Silicon MLX) accepts native top-level `thinking_budget` and `chat_template_kwargs.enable_thinking`, so per-effort budgets ride every request.
-- **A compaction backend.** The summarizer's prefill is trimmed (recent reasoning only, images downgraded to text placeholders, tool results capped), and compaction calls run thinking-off at the line's full output cap, so checkpoints stop getting truncated at the token cap.
+- **A compaction backend.** The summarizer's prefill is trimmed (recent reasoning only, images downgraded to text placeholders, tool results capped), and compaction calls run thinking-off at the line's full output cap, so checkpoints stop getting truncated at the token cap. The trigger point is a live slider in the settings tab (default 80% of the window).
 - **Vision in tool results.** Image blocks nested in tool results (for example `read_image` output) ride the wire instead of being dropped: a resolved image travels inside a multimodal tool message (a content array with an `image_url` entry); an unreadable one degrades to the same text placeholder as the user side, so the model sees that an image was there but its pixels were not.
 - **A settings tab** that configures all lines, live.
 
@@ -48,6 +48,7 @@ The settings tab is the primary entry; headless profiles and patch/env accept th
 | Window | `contextWindow`, `maxTokens` (`DSH_QWEN38_CONTEXT_WINDOW` / `_MAX_TOKENS`) | `262144`, `52428` (output cap ≈ 20% of the window, headroom for the compaction trigger at 0.8×) |
 | Thinking | `thinkingBudgets` (llamacpp + tabbyapi + omlx, per effort), `defaultThinkingBudget` (ninfer, headless/env only; the tab shows the startup flag), `defaultEffort` (`DSH_QWEN38_DEFAULT_EFFORT`) | `{ low: 4096, medium: 8192, xhigh: 16384 }`, `16384`, `medium` |
 | Prefill trim | `DSH_QWEN38_SUMMARIZE_IMAGES`, `DSH_QWEN38_SUMMARIZE_KEEP_TURNS`, `DSH_QWEN38_SUMMARIZE_TOOL_CHARS` (env only) | `strip`, `5`, `2000` |
+| Compaction trigger | `compactThresholdPct` (the tab slider) | `80` (percent of the window where automatic compaction fires; the slider caps at window − output cap) |
 
 ### Settings & Fields Explained
 
@@ -76,6 +77,7 @@ The settings tab is the primary entry; headless profiles and patch/env accept th
 
 #### 4. History Compaction & Trimming
 When conversations approach the context window limit, Harness compresses older history into summaries:
+- **Compaction trigger point (`compactThresholdPct`)**: percent of the context window where automatic compaction fires (default 80). The tab slider (17..99) is hot, landing on the next session step without a restart, and its cap tracks the window and output inputs (the token point shows beside the label). Current usage lives in the chat page's top meter.
 - **Summarize Images (`summarize.images`)**:
   - `strip` (recommended): Replaces older images with brief text placeholders to save significant context space.
   - `keep`: Preserves past images in memory.
@@ -143,7 +145,7 @@ dsh plugin --profile web add github:Yunado/dsh-qwen38-local-qol
 ## 功能特性
 
 - **逐请求 thinking 预算。** llama.cpp 线每请求发送所选 effort 的预算（`reasoning_effort` + `reasoning_budget_tokens`，覆盖服务端 `--reasoning-budget`）；NInfer 引擎的 thinking 预算由服务端启动参数（`--default-thinking-budget`）决定；设置 tab 在 NInfer 线只显示说明（无输入），`defaultThinkingBudget` 字段保留为 headless/env 配置项；TabbyAPI 线两者都原生接受；oMLX 线（Apple Silicon MLX）原生接受顶层 `thinking_budget` 与 `chat_template_kwargs.enable_thinking`，逐请求按档发送。
-- **压缩（compaction）后端。** 摘要 prefill 先裁剪（只留近 N 轮 reasoning、图片降为文本占位符、工具结果按字数帽截断），且压缩调用强制 thinking off + 该线完整输出帽，checkpoint 不再被 token 帽截断。
+- **压缩（compaction）后端。** 摘要 prefill 先裁剪（只留近 N 轮 reasoning、图片降为文本占位符、工具结果按字数帽截断），且压缩调用强制 thinking off + 该线完整输出帽，checkpoint 不再被 token 帽截断。触发点是设置页的实时滑杆（默认窗口的 80%）。
 - **工具结果里的图片不再丢弃。** 嵌套在 tool-result 内的 image block（如 `read_image` 的结果）现在会上线：attachment 能解出 data URL 时，图以多模态 tool 消息（content 数组 + `image_url` 条目）发送；读不出来时用与用户侧相同的文本占位符，模型知道"这里有张图但看不见像素"。
 - **设置 tab**：图形化配置四条服务线，即时生效。
 
@@ -168,6 +170,7 @@ DSH 设置 → **Qwen3.8 本地**：
 | 窗口 | `contextWindow`、`maxTokens`（`DSH_QWEN38_CONTEXT_WINDOW` / `_MAX_TOKENS`） | `262144`、`52428`（输出帽 ≈ 窗口的 20%，为 0.8× 压缩触发线留余量） |
 | Thinking | `thinkingBudgets`（llamacpp + tabbyapi + omlx，按 effort）、`defaultThinkingBudget`（ninfer，仅 headless/env；tab 显示启动参数）、`defaultEffort`（`DSH_QWEN38_DEFAULT_EFFORT`） | `{ low: 4096, medium: 8192, xhigh: 16384 }`、`16384`、`medium` |
 | Prefill 裁剪 | `DSH_QWEN38_SUMMARIZE_IMAGES`、`DSH_QWEN38_SUMMARIZE_KEEP_TURNS`、`DSH_QWEN38_SUMMARIZE_TOOL_CHARS`（仅环境变量） | `strip`、`5`、`2000` |
+| 压缩触发 | `compactThresholdPct`（tab 滑杆） | `80`（自动压缩触发点 = 窗口 × 该比例；滑杆上限 = 窗口 − 输出上限，自动算） |
 
 ### 设置项与字段说明
 
@@ -196,6 +199,7 @@ DSH 设置 → **Qwen3.8 本地**：
 
 #### 4. 历史压缩与裁剪（Compaction）
 当会话过长接近上下文上限时，Harness 会将较早的历史压缩成摘要：
+- **压缩触发点（`compactThresholdPct`）**：上下文达到 上下文窗口 × 该比例 时自动触发压缩（默认 80%）。设置页滑杆（17 到 99）改完即生效、无需重启，落在下一个会话步骤；滑杆上限按当前线的窗口与输出上限自动计算，标签旁显示对应的 token 点。当前用量看聊天页顶部的上下文计量。
 - **图片处理（`summarize.images`）**：
   - `strip`（推荐）：在旧轮次中移除大图并替换为简短占位文本，大幅节省上下文空间。
   - `keep`：在历史中保留原图。

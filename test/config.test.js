@@ -3,6 +3,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { createVolatile, updateVolatile } from '@deepseek-ai/cosmokit'
 import { resolveConfig, DEFAULT_BASE_URL, DEFAULT_LLAMA_BASE_URL, DEFAULT_MODEL, DEFAULT_LLAMA_MODEL, DEFAULT_THINKING_BUDGETS } from '../src/config.js'
 
 test('resolveConfig: built-in defaults open on the general default (llama.cpp line)', () => {
@@ -116,4 +117,56 @@ test('resolveConfig: integer settings accept positive integers only, env accepts
 test('resolveConfig: provider list trims and filters empties, falls back when empty', () => {
   assert.deepEqual(resolveConfig({ provider: [' a ', '', 'b'] }, {}).provider, ['a', 'b'])
   assert.deepEqual(resolveConfig({ provider: [] }, {}).provider, ['qwen38'])
+})
+
+test('resolveConfig: the line selector activates the named lines block wholesale', () => {
+  const base = {
+    line: 'tabbyapi',
+    baseURL: 'http://flat/v1',
+    model: 'flat-model',
+    lines: {
+      tabbyapi: { baseURL: 'http://localhost:8083/v1', model: 'Flash-Next-EXL3', contextWindow: 131072, maxTokens: 32768, apiKey: 'k9' },
+      ninfer: { baseURL: 'http://localhost:8082/v1', model: 'ninfer-line' },
+    },
+  }
+  const resolved = resolveConfig(base, {})
+  assert.equal(resolved.dialect, 'tabbyapi')
+  assert.equal(resolved.baseURL, 'http://localhost:8083/v1')
+  assert.equal(resolved.model, 'Flash-Next-EXL3')
+  assert.equal(resolved.contextWindow, 131072)
+  assert.equal(resolved.maxTokens, 32768)
+})
+
+test('resolveConfig: empty or unknown line keeps the legacy flat form authoritative', () => {
+  assert.equal(resolveConfig({ line: '', baseURL: 'http://flat/v1' }, {}).baseURL, 'http://flat/v1')
+  // A line naming a block the config does not carry changes nothing but the
+  // dialect guard still runs (flat dialect stays the flat one).
+  const resolved = resolveConfig({ line: 'omlx', dialect: 'ninfer', baseURL: 'http://flat/v1' }, {})
+  assert.equal(resolved.baseURL, 'http://flat/v1')
+  assert.equal(resolved.dialect, 'ninfer')
+})
+
+test('resolveConfig: volatile leaf refs (0.2.0 hosts) unwrap, nested included, and track hot commits', () => {
+  // The parsed Config a 0.2.0 host hands the plugin: every .volatile() leaf
+  // (flat and nested) is a live ref object, not a primitive.
+  const config = {
+    dialect: createVolatile('llamacpp'),
+    model: createVolatile('qwen3.8-27b'),
+    displayName: createVolatile(''),
+    maxTokens: createVolatile(52428),
+    thinkingBudgets: { low: createVolatile(1024), medium: createVolatile(8192), xhigh: createVolatile(16384) },
+    lines: { ninfer: { model: createVolatile('ninfer-line'), apiKey: createVolatile('') } },
+  }
+  const resolved = resolveConfig(config, {})
+  assert.equal(resolved.model, 'qwen3.8-27b')
+  assert.equal(resolved.maxTokens, 52428)
+  assert.equal(resolved.thinkingBudgets.medium, 8192)
+  // A hot commit mutates the ref in place; the next read sees the new value
+  // (this is the line-switch the settings tab performs).
+  updateVolatile(config.model, createVolatile('Qwen3.8-Flash-Next'))
+  assert.equal(resolveConfig(config, {}).model, 'Qwen3.8-Flash-Next')
+  // Nested refs unwrap in the line-selector form too.
+  const switched = resolveConfig({ ...config, line: createVolatile('ninfer') }, {})
+  assert.equal(switched.dialect, 'ninfer')
+  assert.equal(switched.model, 'ninfer-line')
 })

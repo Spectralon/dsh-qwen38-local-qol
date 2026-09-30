@@ -60,8 +60,8 @@ test('built bundle: apply registers the settings section with a working load fac
     },
     remote: {
       settings: {
-        describe: async () => ({ ok: true, value: { namespaces: [{ ns: 'qwen38-local-qol', revision: 1, value: { model: 'm' } }] } }),
-        update: async (ns, patch, revision) => { assert.equal(ns, 'qwen38-local-qol'); assert.equal(revision, 1); return { ok: true, value: { ns, revision: 2, value: patch } } },
+        describe: async () => ({ ok: true, value: { namespaces: [{ ns: 'qwen38', revision: 1, value: { model: 'm' } }] } }),
+        update: async (ns, patch, revision) => { assert.equal(ns, 'qwen38'); assert.equal(revision, 1); return { ok: true, value: { ns, revision: 2, value: patch } } },
       },
     },
   }

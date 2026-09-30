@@ -4,7 +4,6 @@ minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-agent@0.2.0-rc.2'
   - '@deepseek-ai/dsh-attachment@0.2.0-rc.2'
   - '@deepseek-ai/dsh-brand@0.2.0-rc.2'
-  - '@deepseek-ai/dsh-client-ui-primitives@0.2.0-rc.2'
   - '@deepseek-ai/dsh-commands@0.2.0-rc.2'
   - '@deepseek-ai/dsh-compaction-basic@0.2.0-rc.2'
   - '@deepseek-ai/dsh-compaction-image-offload@0.2.0-rc.2'

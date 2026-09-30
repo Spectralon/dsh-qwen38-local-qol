@@ -15,7 +15,12 @@ import {
   parseFrame,
   chunksFromCompletion,
   chatCompletionsUrl,
+  scrubControlTokens,
 } from '../src/wire.js'
+
+// Build a control-token literal without this source file itself holding one.
+const BAR = String.fromCharCode(124)
+const tok = (name) => `<${BAR}${name}${BAR}>`
 
 const NINFER = {
   dialect: 'ninfer',
@@ -210,6 +215,36 @@ test('toOpenAiMessages: user tool-result blocks ride as tool messages, error mar
   ])
 })
 
+test('toOpenAiMessages: 0.2.0 first-class tool-role messages (unwrapped blocks) project with their pairing', () => {
+  const image = { type: 'image', attachment: { name: 'shot.png', mediaType: 'image/png', width: 640, height: 480 } }
+  const options = {
+    messages: [
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', id: 'call-9', name: 'pwsh', arguments: '{"command":"echo hi"}' }],
+      },
+      // The 0.2.0 ToolResultMessage shape: blocks unwrapped, pairing + error
+      // flag on the message itself.
+      { role: 'tool', toolCallId: 'call-9', source: { kind: 'tool', callId: 'call-9' }, content: [{ type: 'text', text: 'hi' }] },
+      { role: 'tool', toolCallId: 'call-10', isError: true, content: [{ type: 'text', text: 'boom' }, image] },
+    ],
+  }
+  const urls = new Map([[image, 'data:image/png;base64,QUJD']])
+  assert.deepEqual(toOpenAiMessages(options, urls), [
+    {
+      role: 'assistant',
+      content: null,
+      tool_calls: [{ id: 'call-9', type: 'function', function: { name: 'pwsh', arguments: '{"command":"echo hi"}' } }],
+    },
+    { role: 'tool', tool_call_id: 'call-9', content: 'hi' },
+    {
+      role: 'tool',
+      tool_call_id: 'call-10',
+      content: [{ type: 'text', text: '[error] boom' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,QUJD' } }],
+    },
+  ])
+})
+
 test('toOpenAiMessages: a nested tool-result image rides as image_url when resolved, placeholder otherwise', () => {
   const image = { type: 'image', attachment: { name: 'shot.png', mediaType: 'image/png', width: 640, height: 480 } }
   const options = {
@@ -355,4 +390,38 @@ test('chunksFromCompletion: non-stream JSON answer with reasoning and tools', ()
   const ends = chunks.filter((c) => c.type === 'block-end').map((c) => c.block.type)
   assert.deepEqual(ends, ['reasoning', 'text', 'tool-call'])
   assert.deepEqual(chunks.at(-1).reason, { kind: 'stop' })
+})
+
+test('scrub: control-token literals from user, system, assistant, and tool text never reach the wire raw', () => {
+  const messages = toOpenAiMessages({
+    system: `sys ${tok('im_end')} tail`,
+    messages: [
+      { role: 'user', content: [{ type: 'text', text: `template line: ${tok('im_start')}assistant` }] },
+      { role: 'assistant', content: [
+        { type: 'reasoning', text: `the file shows ${tok('im_start')} usage` },
+        { type: 'tool-call', id: 'c1', name: 'write', arguments: `{"content": "${tok('image_pad')} x"}` },
+      ] },
+      { role: 'user', content: [
+        { type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: `wrote ${tok('vision_start')} fine` }] },
+      ] },
+    ],
+  })
+  const flat = JSON.stringify(messages)
+  assert.ok(!flat.includes(`<${BAR}`), 'no control-token opening survives anywhere on the wire')
+  assert.ok(flat.includes('\uFF1C\uFF5Cim_start\uFF5C\uFF1E'), 'the literal is kept readable in fullwidth form')
+})
+
+test('scrub: a marker split across blocks is caught after the join; plain text untouched', () => {
+  const messages = toOpenAiMessages({
+    messages: [{ role: 'assistant', content: [
+      { type: 'text', text: `<${BAR}im_` },
+      { type: 'text', text: `start${BAR}>` },
+    ] }],
+  })
+  assert.equal(messages[0].content, '\uFF1C\uFF5Cim_start\uFF5C\uFF1E')
+})
+
+test('scrubControlTokens: non-strings pass through; ordinary angle/pipe text is untouched', () => {
+  assert.equal(scrubControlTokens(undefined), undefined)
+  assert.equal(scrubControlTokens('plain < text | pipe > angles <|> not-a-token'), 'plain < text | pipe > angles <|> not-a-token')
 })

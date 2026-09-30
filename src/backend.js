@@ -1,24 +1,32 @@
 /**
  * The Qwen3.8 local-line compaction backend: the stock basic compaction
- * engine with its sole summarization hook overridden so the summarizer
- * prefill is trimmed before the one-shot call (recent reasoning only, images
- * stripped, tool results capped). The trim keeps the auxiliary call's input
- * bounded so a slow local model does not idle out under the stream watchdog;
- * thinking stays off for the call because the wire forces it off for
- * `purpose: 'compaction'` requests, so the whole output cap is available for
- * the checkpoint instead of burning it on thinking.
+ * engine with two overrides.
  *
- * Mounted as a service row in the generated user preset
- * (`~/.dsh/.agent-presets/qwen38/agent.cordis.yml`, via
- * {@link dsh-qwen38-local-qol/setup}), inside the preset's isolated compaction
+ * - `compactIfNeeded`: before each trigger evaluation, the live
+ *   `compactThresholdPct` from the user-settings section (the Settings tab's
+ *   slider) becomes the engine's `thresholdRatio`, so moving the slider moves
+ *   the next automatic compaction without any restart. The row config keeps
+ *   the stock default (0.8 with a zero headroom). Without a settings section
+ *   (env layer / bare unit receivers) the row values stand.
+ * - `summarize`: the summarizer prefill is trimmed before the one-shot call
+ *   (recent reasoning only, images stripped, tool results capped). The trim
+ *   keeps the auxiliary call's input bounded so a slow local model does not
+ *   idle out under the stream watchdog; thinking stays off for the call
+ *   because the wire forces it off for `purpose: 'compaction'` requests, so
+ *   the whole output cap is available for the checkpoint instead of burning
+ *   it on thinking.
+ *
+ * Mounted as a service row in the `qwen38` preset roster declared by this
+ * bundle (`presets/qwen38.patch.yml`), inside the preset's isolated compaction
  * group. The row config is the stock `BasicCompactionConfig`; the only
  * recommended row value is `maxTokens: 52428` (the stock 8192 default
  * truncates long local checkpoints); the wire also raises any compaction
  * call to the line's output cap, which covers presets without this row. The
- * trim knobs come from the user-settings
- * section (the Settings tab's `summarize` block) when that namespace is
- * registered, else from environment variables (see {@link resolveTrimKnobs})
- * so the row carries no keys the stock config schema does not know.
+ * trigger and trim knobs come from the user-settings
+ * section (the Settings tab's section, `compactThresholdPct` and the
+ * `summarize` block) when that namespace is registered, else from environment
+ * variables (see {@link resolveTrimKnobs}) so the row carries no keys the
+ * stock config schema does not know.
  *
  * @module dsh-qwen38-local-qol/backend
  */
@@ -26,10 +34,65 @@ import BasicCompactionEngine from '@deepseek-ai/dsh-compaction-basic'
 import { prepareSummaryRegion, resolveTrimKnobs, DEFAULT_TRIM_KNOBS } from './prepare.js'
 import { NS } from './settings-section.js'
 
+/** Inclusive bounds for the live trigger percent (mirrors `validateSection`). */
+const TRIGGER_PCT_MIN = 17
+const TRIGGER_PCT_MAX = 99
+
 /**
- * Basic compaction with a trimmed summarizer prefill.
+ * The user-settings section, live, when its namespace is registered (module
+ * function, no private-member access, so prototype-only receivers keep working).
+ * @param ctx - the engine's cordis context.
+ * @returns the resolved section object, or undefined without it.
+ */
+function settingsSection(ctx) {
+  const settings = typeof ctx?.get === 'function' ? ctx.get('settings') : undefined
+  const section = typeof settings?.get === 'function' ? settings.get(NS) : undefined
+  return section !== null && typeof section === 'object' ? section : undefined
+}
+
+/**
+ * The live trigger ratio from `compactThresholdPct` (a volatile leaf may
+ * arrive wrapped, so unwrap first).
+ * @param ctx - the engine's cordis context.
+ * @returns the ratio in (0, 1), or undefined when the section carries no valid value.
+ */
+function liveThresholdRatio(ctx) {
+  const raw = settingsSection(ctx)?.compactThresholdPct
+  const pct = raw !== null && typeof raw === 'object' && typeof raw.get === 'function' ? raw.get() : raw
+  return Number.isInteger(pct) && pct >= TRIGGER_PCT_MIN && pct <= TRIGGER_PCT_MAX ? pct / 100 : undefined
+}
+
+/**
+ * Basic compaction with a live trigger ratio and a trimmed summarizer prefill.
  */
 export class QwenLocalCompaction extends BasicCompactionEngine {
+  /** The row config, kept as the untouched base each trigger evaluation rebuilds from. */
+  baseConfig
+
+  /** @param ctx - cordis context; @param config - the stock `BasicCompactionConfig` from the service row. */
+  constructor(ctx, config) {
+    super(ctx, config)
+    this.baseConfig = this.config
+  }
+
+  /**
+   * Apply the live trigger ratio to the engine config, then delegate: the
+   * pressure decision stays the stock path (`min(window x thresholdRatio,
+   * window - reserved output)`), only the ratio is refreshed per evaluation.
+   * Without a valid live value the row base is restored, so a removed setting
+   * never leaves a stale ratio on the next evaluation.
+   * @param agent - agent whose latest durable routed request is measured.
+   * @param trigger - normal step-boundary pressure or context-overflow recovery.
+   * @param signal - live turn cancellation signal forwarded to summarization.
+   * @returns the latest summary compaction result, or `null` when no summary ran.
+   */
+  async compactIfNeeded(agent, trigger, signal) {
+    const base = this.baseConfig ?? this.config
+    const ratio = liveThresholdRatio(this.ctx)
+    this.config = ratio === undefined ? base : { ...base, thresholdRatio: ratio }
+    return super.compactIfNeeded(agent, trigger, signal)
+  }
+
   /**
    * Trim the replayed region, then delegate to the stock summarization path
    * (target resolution, the `reasoningEffort: off` one-shot
@@ -44,11 +107,8 @@ export class QwenLocalCompaction extends BasicCompactionEngine {
     // Trim knobs, live: the user-settings section's resolved `summarize`
     // block when its namespace is registered (the schema resolves it
     // complete, with defaults for untouched fields), else the environment
-    // layer. The read is direct (no private members) so prototype-only
-    // receivers keep working.
-    const settings = typeof this.ctx?.get === 'function' ? this.ctx.get('settings') : undefined
-    const section = typeof settings?.get === 'function' ? settings.get(NS) : undefined
-    const sectionKnobs = section?.summarize
+    // layer.
+    const sectionKnobs = settingsSection(this.ctx)?.summarize
     const knobs = sectionKnobs !== undefined && typeof sectionKnobs === 'object'
       ? { ...DEFAULT_TRIM_KNOBS, ...sectionKnobs }
       : resolveTrimKnobs(process.env)

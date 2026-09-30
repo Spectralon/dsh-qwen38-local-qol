@@ -1,6 +1,6 @@
 {
   "name": "dsh-qwen38-local-qol",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "DeepSeek Harness QoL plugin for the local Qwen3.8 line (27B, Flash-Next): per-request thinking budgets on llama.cpp, NInfer, TabbyAPI, and oMLX dialects, vision + tools, and a compaction backend whose summaries stop burning the output cap on thinking.",
   "type": "module",
   "license": "MIT",
@@ -9,9 +9,9 @@
   "exports": {
     ".": "./src/index.js",
     "./backend": "./src/backend.js",
-    "./setup": "./src/setup.js",
     "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
+    "./presets/qwen38.patch.yml": "./presets/qwen38.patch.yml",
     "./package.json": "./package.json"
   },
   "files": [
@@ -19,6 +19,7 @@
     "lib",
     "scripts",
     "cordis.patch.yml",
+    "presets",
     "README.md",
     "LICENSE"
   ],
@@ -27,7 +28,7 @@
   },
   "dsh": {
     "bundle": {
-      "patch": "./cordis.patch.yml"
+      "patch": ["./cordis.patch.yml", "./presets/qwen38.patch.yml"]
     },
     "client": {
       "platform": "web",
@@ -41,7 +42,6 @@
   },
   "scripts": {
     "test": "node --test \"test/**/*.test.js\"",
-    "setup": "node src/setup.js",
     "build:client": "node scripts/build-client.mjs"
   },
   "keywords": [
@@ -67,10 +67,11 @@
   },
   "homepage": "https://github.com/Yunado/dsh-qwen38-local-qol#readme",
   "peerDependencies": {
-    "@deepseek-ai/cordis": "~4.0.4",
-    "@deepseek-ai/dsh-compaction-basic": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
-    "@deepseek-ai/schemastery": "~3.18.4",
+    "@deepseek-ai/cosmokit": "^1.8.5",
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/dsh-compaction-basic": "^0.2.0-rc.2",
+    "@deepseek-ai/dsh-llm": "^0.2.0-rc.2",
+    "@deepseek-ai/schemastery": "^3.18.4",
     "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
@@ -79,6 +80,7 @@
     }
   },
   "devDependencies": {
+    "@deepseek-ai/cosmokit": "^1.8.5",
     "@deepseek-ai/cordis": "4.0.4",
     "@deepseek-ai/dsh-attachment": "0.2.0-rc.2",
     "@deepseek-ai/dsh-brand": "0.2.0-rc.2",
