@@ -80,6 +80,11 @@
                 name: dsh-qwen38-local-qol/backend
                 config:
                   maxTokens: 24576
+                  # Stock default 65536 clamps the trigger to W-O-B and nullifies
+                  # thresholdRatio on local windows (upstream discussion 8079).
+                  # 0 restores the 0.8 ratio as the trigger; maxTokens above must
+                  # stay explicit because its default follows headroom.
+                  headroomTokens: 0
               - id: command-compact
                 name: '@deepseek-ai/dsh-command-compact'
               - id: tool-result-pruner
