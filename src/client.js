@@ -589,6 +589,20 @@ export function apply(ctx) {
         save: async (view, patch) => {
           const response = await ctx.remote.settings.update(NS, patch, view.revision)
           if (response.ok !== true) return { ok: false, code: response.error.code, error: response.error.message }
+          // Keep the official session-layer default model in step with the
+          // line switch: when the `agent-default-model` row already points at
+          // this provider, repoint its model id at the newly active line
+          // (another provider's pick is never touched). Best-effort; the
+          // composer picker stays the manual path.
+          try {
+            const fresh = await ctx.remote.settings.describe()
+            const row = fresh.ok === true
+              ? fresh.value.namespaces.find((entry) => entry.ns === 'agent-default-model')
+              : undefined
+            if (row !== undefined && row.value?.provider === NS && row.value.model !== patch.model) {
+              await ctx.remote.settings.update('agent-default-model', { model: patch.model }, row.revision)
+            }
+          } catch { /* the row is absent or read-only - leave it alone */ }
           return { ok: true, value: response.value }
         },
       }),

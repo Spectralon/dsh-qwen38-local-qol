@@ -33,7 +33,7 @@ function fakeCtx(overrides = {}) {
       ns: 'agent-preset-registry',
       revision: 3,
       value: { default: 'standard', selectedDefault: undefined },
-    }],
+    }, ...(overrides.defaultModel ? [{ ns: 'agent-default-model', revision: 1, value: overrides.defaultModel }] : [])],
   }
   const ctx = {
     locale: { getSnapshot: () => ({ active: 'zh' }) },
@@ -149,6 +149,46 @@ test('client: a stale-revision write answers a conflict the caller can re-load',
   assert.equal(saved.code, 'settings-conflict')
   const fresh = await captured.load()
   assert.equal(fresh.value.revision, 9)
+})
+
+test('client: saving a line change repoints the official default-model row when it rides this provider', async () => {
+  const { ctx, updateCalls, state } = fakeCtx({ defaultModel: { provider: 'qwen38', model: 'qwen3.8-27b', reasoningEffort: 'medium' } })
+  let captured = null
+  ctx.slots.register = (option) => { captured = option.inject() }
+  client.apply(ctx)
+  const loaded = await captured.load()
+  const saved = await captured.save(loaded.value, { model: 'Qwen3.8-Flash-Next' })
+  assert.equal(saved.ok, true)
+  assert.equal(updateCalls.length, 2)
+  assert.equal(updateCalls[1].ns, 'agent-default-model')
+  assert.deepEqual(updateCalls[1].patch, { model: 'Qwen3.8-Flash-Next' })
+  assert.equal(updateCalls[1].revision, 1)
+  assert.equal(state.namespaces[2].value.model, 'Qwen3.8-Flash-Next')
+  // Effort and provider ride untouched.
+  assert.equal(state.namespaces[2].value.reasoningEffort, 'medium')
+  assert.equal(state.namespaces[2].value.provider, 'qwen38')
+})
+
+test('client: the default-model sync never touches another provider pick or repeats an equal model', async () => {
+  const { ctx, updateCalls } = fakeCtx({ defaultModel: { provider: 'deepseek', model: 'deepseek-v4-pro' } })
+  let captured = null
+  ctx.slots.register = (option) => { captured = option.inject() }
+  client.apply(ctx)
+  const loaded = await captured.load()
+  await captured.save(loaded.value, { model: 'Qwen3.8-Flash-Next' })
+  assert.equal(updateCalls.length, 1)
+  assert.equal(updateCalls[0].ns, 'qwen38')
+})
+
+test('client: an already-matching default-model row is not rewritten (no-op write discipline)', async () => {
+  const { ctx, updateCalls } = fakeCtx({ defaultModel: { provider: 'qwen38', model: 'Qwen3.8-Flash-Next' } })
+  let captured = null
+  ctx.slots.register = (option) => { captured = option.inject() }
+  client.apply(ctx)
+  const loaded = await captured.load()
+  await captured.save(loaded.value, { model: 'Qwen3.8-Flash-Next' })
+  assert.equal(updateCalls.length, 1)
+  assert.equal(updateCalls[0].ns, 'qwen38')
 })
 
 test('toDraft: a fresh section (no user layer) ships the production defaults pre-filled', () => {
