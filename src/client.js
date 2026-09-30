@@ -24,109 +24,165 @@
  *
  * @module dsh-qwen38-local-qol/client
  */
-import * as React from 'react'
-import { Button, Input, StateDot, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import * as React from "react";
+import {
+  Button,
+  Input,
+  StateDot,
+  Switch,
+} from "@deepseek-ai/dsh-client-ui-primitives";
 
 /** The settings namespace this tab edits (mirrors the host's `NS`). */
-const NS = 'qwen38-local-qol'
+const NS = "qwen38-local-qol";
 
 /** The generated preset id (mirrors the host's `PRESET_ID`). */
-const PRESET_ID = 'qwen38'
+const PRESET_ID = "qwen38";
 
 /** Password-reveal icons: an open eye while revealed, a slashed eye while concealed. */
-const EYE_OPEN = React.createElement('svg', { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', ariaHidden: true },
-  React.createElement('path', { d: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z' }),
-  React.createElement('circle', { cx: 12, cy: 12, r: 3 }))
-const EYE_CLOSED = React.createElement('svg', { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', ariaHidden: true },
-  React.createElement('path', { d: 'M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.17 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24' }),
-  React.createElement('line', { x1: 1, y1: 1, x2: 23, y2: 23 }))
+const EYE_OPEN = React.createElement(
+  "svg",
+  {
+    width: 15,
+    height: 15,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 2,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ariaHidden: true,
+  },
+  React.createElement("path", {
+    d: "M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z",
+  }),
+  React.createElement("circle", { cx: 12, cy: 12, r: 3 }),
+);
+const EYE_CLOSED = React.createElement(
+  "svg",
+  {
+    width: 15,
+    height: 15,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 2,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ariaHidden: true,
+  },
+  React.createElement("path", {
+    d: "M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.17 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24",
+  }),
+  React.createElement("line", { x1: 1, y1: 1, x2: 23, y2: 23 }),
+);
 
 const COPY = {
   en: {
-    title: 'Qwen3.8 Local',
-    line: 'Server line',
-    dialectNinfer: 'NInfer',
-    dialectLlamacpp: 'llama.cpp',
-    dialectTabbyapi: 'TabbyAPI',
-    dialectOmlx: 'oMLX',
-    connection: 'Connection',
-    baseURL: 'Server base URL',
-    model: 'Model id',
-    displayName: 'Display name',
-    apiKey: 'API key',
-    apiKeyHint: 'Empty = keyless. When set, requests carry Authorization: Bearer <key>.',
-    revealKey: 'Reveal the stored key',
-    concealKey: 'Conceal the stored key',
-    window: 'Window and output',
-    contextWindow: 'Context window (tokens)',
-    maxTokens: 'Output cap (tokens)',
-    thinking: 'Thinking budgets',
-    thinkingAll: 'All efforts',
-    thinkingHintNinfer: 'NInfer reads its thinking budget at server startup (--default-thinking-budget); a per-request budget is not supported (ninfer as of 2026-09-14; ninfer-windows 0.7.1). Change the startup flag and restart the server.',
-    thinkingHintLlamacpp: 'Thinking hard cap, sent per request per selected level (overrides the server\'s --reasoning-budget flag).',
-    thinkingHintTabbyapi: 'Thinking hard cap, sent per request per selected level (TabbyAPI native reasoning_budget_tokens).',
-    thinkingHintOmlx: 'Thinking hard cap, sent per request per selected level (oMLX native thinking_budget).',
-    compaction: 'Compaction prefill trim',
-    summarizeImages: 'Images in the summarizer prefill',
-    summarizeHint: 'Off strips images in the summarizer prefill to text placeholders (prefer with mmproj offload).',
-    keepTurns: 'Keep reasoning of the last N turns',
-    toolChars: 'Tool-result character cap (0 = off)',
-    save: 'Save',
-    saving: 'Saving…',
-    saved: 'Saved',
-    loading: 'Loading…',
-    notFound: 'This plugin is not registered a settings section on the host side (restart DSH web after installing the plugin, then open this page again).',
-    conflict: 'Someone else changed these settings while you were editing. Your edits were discarded; the current values are shown.',
-    invalidNumber: 'Every number field must be a positive whole number.',
-    remoteError: 'Settings request failed: ',
-    compactionNotSet: 'Local compaction is not set up — the trim controls below apply once the qwen38 preset is generated (one-time setup, see the plugin README).',
-    compactionActive: 'Local compaction is active for new sessions (default preset: qwen38).',
-    compactionAvailable: 'Local compaction is available, but the default preset is "{default}" — new sessions use standard compaction. Select qwen38 on the Agent presets page to enable it.',
-    compactionHint: 'The trim controls apply to sessions using the qwen38 preset.',
+    title: "Qwen3.8 Local",
+    line: "Server line",
+    dialectNinfer: "NInfer",
+    dialectLlamacpp: "llama.cpp",
+    dialectTabbyapi: "TabbyAPI",
+    dialectOmlx: "oMLX",
+    connection: "Connection",
+    baseURL: "Server base URL",
+    model: "Model id",
+    displayName: "Display name",
+    apiKey: "API key",
+    apiKeyHint:
+      "Empty = keyless. When set, requests carry Authorization: Bearer <key>.",
+    revealKey: "Reveal the stored key",
+    concealKey: "Conceal the stored key",
+    window: "Window and output",
+    contextWindow: "Context window (tokens)",
+    maxTokens: "Output cap (tokens)",
+    thinking: "Thinking budgets",
+    thinkingAll: "All efforts",
+    thinkingHintNinfer:
+      "NInfer reads its thinking budget at server startup (--default-thinking-budget); a per-request budget is not supported (ninfer as of 2026-09-14; ninfer-windows 0.7.1). Change the startup flag and restart the server.",
+    thinkingHintLlamacpp:
+      "Thinking hard cap, sent per request per selected level (overrides the server's --reasoning-budget flag).",
+    thinkingHintTabbyapi:
+      "Thinking hard cap, sent per request per selected level (TabbyAPI native reasoning_budget_tokens).",
+    thinkingHintOmlx:
+      "Thinking hard cap, sent per request per selected level (oMLX native thinking_budget).",
+    compaction: "Compaction prefill trim",
+    summarizeImages: "Images in the summarizer prefill",
+    summarizeHint:
+      "Off strips images in the summarizer prefill to text placeholders (prefer with mmproj offload).",
+    keepTurns: "Keep reasoning of the last N turns",
+    toolChars: "Tool-result character cap (0 = off)",
+    save: "Save",
+    saving: "Saving…",
+    saved: "Saved",
+    loading: "Loading…",
+    notFound:
+      "This plugin is not registered a settings section on the host side (restart DSH web after installing the plugin, then open this page again).",
+    conflict:
+      "Someone else changed these settings while you were editing. Your edits were discarded; the current values are shown.",
+    invalidNumber: "Every number field must be a positive whole number.",
+    remoteError: "Settings request failed: ",
+    compactionNotSet:
+      "Local compaction is not set up — the trim controls below apply once the qwen38 preset is generated (one-time setup, see the plugin README).",
+    compactionActive:
+      "Local compaction is active for new sessions (default preset: qwen38).",
+    compactionAvailable:
+      'Local compaction is available, but the default preset is "{default}" — new sessions use standard compaction. Select qwen38 on the Agent presets page to enable it.',
+    compactionHint:
+      "The trim controls apply to sessions using the qwen38 preset.",
   },
   zh: {
-    title: 'Qwen3.8 本地',
-    line: '服务器线',
-    dialectNinfer: 'NInfer',
-    dialectLlamacpp: 'llama.cpp',
-    dialectTabbyapi: 'TabbyAPI',
-    dialectOmlx: 'oMLX',
-    connection: '连接',
-    baseURL: '服务器地址',
-    model: '模型 id',
-    displayName: '显示名',
-    apiKey: '接口密钥（API key）',
-    apiKeyHint: '留空 = 无认证；填写后请求带 Authorization: Bearer <key>。',
-    revealKey: '显示已存的密钥',
-    concealKey: '隐藏已存的密钥',
-    window: '窗口与输出',
-    contextWindow: '上下文窗口（token）',
-    maxTokens: '输出上限（token）',
-    thinking: 'Thinking 预算',
-    thinkingAll: '全部 effort',
-    thinkingHintNinfer: 'NInfer 的 thinking 预算在服务启动时设定（--default-thinking-budget 启动参数，不支持逐请求，ninfer as of 2026-09-14；ninfer-windows 0.7.1）。改启动参数后重启服务生效。',
-    thinkingHintLlamacpp: 'thinking 硬帽，逐请求按所选档发送（覆盖服务端 --reasoning-budget）。',
-    thinkingHintTabbyapi: 'thinking 硬帽，逐请求按所选档发送（TabbyAPI 原生 reasoning_budget_tokens）。',
-    thinkingHintOmlx: 'thinking 硬帽，逐请求按所选档发送（oMLX 原生 thinking_budget）。',
-    compaction: '压缩预填充裁剪',
-    summarizeImages: '摘要预填充里的图片',
-    summarizeHint: '关闭 = 摘要预填充里的图片替换为文本占位符（mmproj offload 时优选）。',
-    keepTurns: '保留最近 N 轮的 reasoning',
-    toolChars: '工具结果字数帽（0 = 关）',
-    save: '保存',
-    saving: '保存中…',
-    saved: '已保存',
-    loading: '加载中…',
-    notFound: '宿主侧未注册该插件的设置命名空间（装完插件后重启 DSH web，再打开本页面）。',
-    conflict: '编辑期间他人修改了这些设置。你的改动已丢弃，当前显示的是最新值。',
-    invalidNumber: '所有数字字段必须是正整数。',
-    remoteError: '设置请求失败：',
-    compactionNotSet: '本地压缩未启用——生成 qwen38 预设（一次性 setup，见插件 README）后，下方裁剪设置才会生效。',
-    compactionActive: '本地压缩对新会话生效（默认预设：qwen38）。',
-    compactionAvailable: '本地压缩可用，但默认预设是 "{default}"——新会话走标准压缩。在 Agent 预设页选择 qwen38 启用。',
-    compactionHint: '裁剪设置仅对 qwen38 预设的会话生效。',
+    title: "Qwen3.8 本地",
+    line: "服务器线",
+    dialectNinfer: "NInfer",
+    dialectLlamacpp: "llama.cpp",
+    dialectTabbyapi: "TabbyAPI",
+    dialectOmlx: "oMLX",
+    connection: "连接",
+    baseURL: "服务器地址",
+    model: "模型 id",
+    displayName: "显示名",
+    apiKey: "接口密钥（API key）",
+    apiKeyHint: "留空 = 无认证；填写后请求带 Authorization: Bearer <key>。",
+    revealKey: "显示已存的密钥",
+    concealKey: "隐藏已存的密钥",
+    window: "窗口与输出",
+    contextWindow: "上下文窗口（token）",
+    maxTokens: "输出上限（token）",
+    thinking: "Thinking 预算",
+    thinkingAll: "全部 effort",
+    thinkingHintNinfer:
+      "NInfer 的 thinking 预算在服务启动时设定（--default-thinking-budget 启动参数，不支持逐请求，ninfer as of 2026-09-14；ninfer-windows 0.7.1）。改启动参数后重启服务生效。",
+    thinkingHintLlamacpp:
+      "thinking 硬帽，逐请求按所选档发送（覆盖服务端 --reasoning-budget）。",
+    thinkingHintTabbyapi:
+      "thinking 硬帽，逐请求按所选档发送（TabbyAPI 原生 reasoning_budget_tokens）。",
+    thinkingHintOmlx:
+      "thinking 硬帽，逐请求按所选档发送（oMLX 原生 thinking_budget）。",
+    compaction: "压缩预填充裁剪",
+    summarizeImages: "摘要预填充里的图片",
+    summarizeHint:
+      "关闭 = 摘要预填充里的图片替换为文本占位符（mmproj offload 时优选）。",
+    keepTurns: "保留最近 N 轮的 reasoning",
+    toolChars: "工具结果字数帽（0 = 关）",
+    save: "保存",
+    saving: "保存中…",
+    saved: "已保存",
+    loading: "加载中…",
+    notFound:
+      "宿主侧未注册该插件的设置命名空间（装完插件后重启 DSH web，再打开本页面）。",
+    conflict:
+      "编辑期间他人修改了这些设置。你的改动已丢弃，当前显示的是最新值。",
+    invalidNumber: "所有数字字段必须是正整数。",
+    remoteError: "设置请求失败：",
+    compactionNotSet:
+      "本地压缩未启用——生成 qwen38 预设（一次性 setup，见插件 README）后，下方裁剪设置才会生效。",
+    compactionActive: "本地压缩对新会话生效（默认预设：qwen38）。",
+    compactionAvailable:
+      '本地压缩可用，但默认预设是 "{default}"——新会话走标准压缩。在 Agent 预设页选择 qwen38 启用。',
+    compactionHint: "裁剪设置仅对 qwen38 预设的会话生效。",
   },
-}
+};
 
 /**
  * The compaction wiring status line for the settings tab: whether the local
@@ -137,9 +193,13 @@ const COPY = {
  * @returns the status sentence (the available state substitutes the preset id).
  */
 export function compactionStatusCopy(status, t) {
-  if (status === undefined || status.presetGenerated !== true) return t.compactionNotSet
-  if (status.defaultPreset === PRESET_ID) return t.compactionActive
-  return t.compactionAvailable.replace('{default}', String(status.defaultPreset))
+  if (status === undefined || status.presetGenerated !== true)
+    return t.compactionNotSet;
+  if (status.defaultPreset === PRESET_ID) return t.compactionActive;
+  return t.compactionAvailable.replace(
+    "{default}",
+    String(status.defaultPreset),
+  );
 }
 
 /**
@@ -151,16 +211,19 @@ export function compactionStatusCopy(status, t) {
  * @returns the `StateDot` state ('done' | 'warning' | 'idle').
  */
 export function compactionStatusState(status) {
-  if (status === undefined || status.presetGenerated !== true) return 'idle'
-  if (status.defaultPreset === PRESET_ID) return 'done'
-  return 'warning'
+  if (status === undefined || status.presetGenerated !== true) return "idle";
+  if (status.defaultPreset === PRESET_ID) return "done";
+  return "warning";
 }
 
 /** One editable field row: the host field pattern — a 12px label over a control. */
 function Field({ label, children }) {
-  return React.createElement('div', { className: 'qol-field' },
-    React.createElement('label', { className: 'qol-fieldLabel' }, label),
-    children)
+  return React.createElement(
+    "div",
+    { className: "qol-field" },
+    React.createElement("label", { className: "qol-fieldLabel" }, label),
+    children,
+  );
 }
 
 /**
@@ -171,7 +234,9 @@ function Field({ label, children }) {
  * @returns the onChange handler.
  */
 function digitsOnly(setValue) {
-  return (e) => { setValue(e.target.value.replace(/\D/g, '')) }
+  return (e) => {
+    setValue(e.target.value.replace(/\D/g, ""));
+  };
 }
 
 /**
@@ -184,7 +249,7 @@ const LINE_WINDOW_DEFAULTS = Object.freeze({
   llamacpp: { contextWindow: 262144, maxTokens: 52428 },
   tabbyapi: { contextWindow: 262144, maxTokens: 52428 },
   omlx: { contextWindow: 262144, maxTokens: 52428 },
-})
+});
 
 /**
  * Read one line's editable record. `fallback` is the section's top-level
@@ -197,23 +262,28 @@ const LINE_WINDOW_DEFAULTS = Object.freeze({
  * @returns the flat record for the tab's inputs.
  */
 function lineRecord(name, raw, fallback) {
-  const d = LINE_WINDOW_DEFAULTS[name]
-  const src = { contextWindow: d.contextWindow, maxTokens: d.maxTokens, ...(fallback ?? {}), ...(raw ?? {}) }
+  const d = LINE_WINDOW_DEFAULTS[name];
+  const src = {
+    contextWindow: d.contextWindow,
+    maxTokens: d.maxTokens,
+    ...(fallback ?? {}),
+    ...(raw ?? {}),
+  };
   return {
-    baseURL: src.baseURL ?? '',
-    model: src.model ?? '',
-    displayName: src.displayName ?? '',
-    apiKey: src.apiKey ?? '',
+    baseURL: src.baseURL ?? "",
+    model: src.model ?? "",
+    displayName: src.displayName ?? "",
+    apiKey: src.apiKey ?? "",
     contextWindow: String(src.contextWindow ?? d.contextWindow),
     maxTokens: String(src.maxTokens ?? d.maxTokens),
     low: String(src.thinkingBudgets?.low ?? 4096),
     medium: String(src.thinkingBudgets?.medium ?? 8192),
     xhigh: String(src.thinkingBudgets?.xhigh ?? 16384),
     defaultThinkingBudget: String(src.defaultThinkingBudget ?? 16384),
-    images: src.summarize?.images ?? 'strip',
+    images: src.summarize?.images ?? "strip",
     keepTurns: String(src.summarize?.keepTurns ?? 5),
     toolChars: String(src.summarize?.toolChars ?? 2000),
-  }
+  };
 }
 
 /**
@@ -232,28 +302,46 @@ function lineRecord(name, raw, fallback) {
  * empty of meaning, everything else ships pre-filled.
  */
 export function toDraft(value) {
-  const dialect = value.dialect
-  const legacy = (value.user ?? {}).lines === undefined
-  const legacyTop = legacy ? {
-    baseURL: value.baseURL,
-    model: value.model,
-    displayName: value.displayName,
-    contextWindow: value.contextWindow,
-    maxTokens: value.maxTokens,
-    thinkingBudgets: value.thinkingBudgets,
-    defaultThinkingBudget: value.defaultThinkingBudget,
-    summarize: value.summarize,
-    apiKey: value.apiKey,
-  } : undefined
+  const dialect = value.dialect;
+  const legacy = (value.user ?? {}).lines === undefined;
+  const legacyTop = legacy
+    ? {
+        baseURL: value.baseURL,
+        model: value.model,
+        displayName: value.displayName,
+        contextWindow: value.contextWindow,
+        maxTokens: value.maxTokens,
+        thinkingBudgets: value.thinkingBudgets,
+        defaultThinkingBudget: value.defaultThinkingBudget,
+        summarize: value.summarize,
+        apiKey: value.apiKey,
+      }
+    : undefined;
   // The legacy top level belongs to the active line only; the other lines
   // park at their built-in defaults.
   const lines = {
-    ninfer: lineRecord('ninfer', value.lines?.ninfer, dialect === 'ninfer' ? legacyTop : undefined),
-    llamacpp: lineRecord('llamacpp', value.lines?.llamacpp, dialect === 'llamacpp' ? legacyTop : undefined),
-    tabbyapi: lineRecord('tabbyapi', value.lines?.tabbyapi, dialect === 'tabbyapi' ? legacyTop : undefined),
-    omlx: lineRecord('omlx', value.lines?.omlx, dialect === 'omlx' ? legacyTop : undefined),
-  }
-  const active = lines[dialect]
+    ninfer: lineRecord(
+      "ninfer",
+      value.lines?.ninfer,
+      dialect === "ninfer" ? legacyTop : undefined,
+    ),
+    llamacpp: lineRecord(
+      "llamacpp",
+      value.lines?.llamacpp,
+      dialect === "llamacpp" ? legacyTop : undefined,
+    ),
+    tabbyapi: lineRecord(
+      "tabbyapi",
+      value.lines?.tabbyapi,
+      dialect === "tabbyapi" ? legacyTop : undefined,
+    ),
+    omlx: lineRecord(
+      "omlx",
+      value.lines?.omlx,
+      dialect === "omlx" ? legacyTop : undefined,
+    ),
+  };
+  const active = lines[dialect];
   return {
     dialect,
     lines,
@@ -273,7 +361,7 @@ export function toDraft(value) {
     // keyless, the wire omits the Authorization header); every line keeps its
     // own copy under `lines`.
     apiKey: active.apiKey,
-  }
+  };
 }
 
 /** Lift one parked line record onto the flat draft inputs. */
@@ -295,60 +383,129 @@ function liftedInputs(record) {
     images: record.images,
     keepTurns: record.keepTurns,
     toolChars: record.toolChars,
-  }
+  };
 }
 
 /** The section entry: locale follows the host observable; data rides the inject face. */
 function QwenLocalSectionEntry({ useLocale, load, save }) {
-  const locale = useLocale((snapshot) => (snapshot.active === 'zh' ? 'zh' : 'en'))
-  const t = COPY[locale]
-  const [state, setState] = React.useState({ status: 'loading', error: null, view: null, draft: null, busy: false, saved: false, agentPresets: null })
+  const locale = useLocale((snapshot) =>
+    snapshot.active === "zh" ? "zh" : "en",
+  );
+  const t = COPY[locale];
+  const [state, setState] = React.useState({
+    status: "loading",
+    error: null,
+    view: null,
+    draft: null,
+    busy: false,
+    saved: false,
+    agentPresets: null,
+  });
   // Password-style display for the API key: masked by default, the eye button
   // toggles between revealing and concealing the stored value.
-  const [revealedKey, setRevealedKey] = React.useState(false)
+  const [revealedKey, setRevealedKey] = React.useState(false);
 
-  const setDraft = (patch) => setState((s) => ({ ...s, draft: s.draft === null ? s.draft : { ...s.draft, ...patch }, saved: false }))
+  const setDraft = (patch) =>
+    setState((s) => ({
+      ...s,
+      draft: s.draft === null ? s.draft : { ...s.draft, ...patch },
+      saved: false,
+    }));
 
   // Switching the server line: the flat inputs take the target line's parked
   // record, so each line remembers its own values across switches and back.
   const switchDialect = (next) => {
     setState((s) => {
-      if (s.draft === null || s.draft.dialect === next) return s
-      const d = s.draft
+      if (s.draft === null || s.draft.dialect === next) return s;
+      const d = s.draft;
       return {
         ...s,
         saved: false,
         draft: { ...d, dialect: next, ...liftedInputs(d.lines[next]) },
-      }
-    })
-  }
+      };
+    });
+  };
 
   React.useEffect(() => {
-    let alive = true
-    load().then((result) => {
-      if (!alive) return
-      if (result.ok) setState({ status: 'ready', error: null, view: result.value, draft: toDraft(result.value.value), busy: false, saved: false, agentPresets: result.agentPresets ?? null })
-      else setState({ status: 'error', error: result.ok === false && result.error === 'ns-missing' ? t.notFound : result.error, view: null, draft: null, busy: false, saved: false })
-    }).catch((error) => {
-      if (!alive) return
-      setState({ status: 'error', error: t.remoteError + (error instanceof Error ? error.message : String(error)), view: null, draft: null, busy: false, saved: false })
-    })
-    return () => { alive = false }
+    let alive = true;
+    load()
+      .then((result) => {
+        if (!alive) return;
+        if (result.ok)
+          setState({
+            status: "ready",
+            error: null,
+            view: result.value,
+            draft: toDraft(result.value.value),
+            busy: false,
+            saved: false,
+            agentPresets: result.agentPresets ?? null,
+          });
+        else
+          setState({
+            status: "error",
+            error:
+              result.ok === false && result.error === "ns-missing"
+                ? t.notFound
+                : result.error,
+            view: null,
+            draft: null,
+            busy: false,
+            saved: false,
+          });
+      })
+      .catch((error) => {
+        if (!alive) return;
+        setState({
+          status: "error",
+          error:
+            t.remoteError +
+            (error instanceof Error ? error.message : String(error)),
+          view: null,
+          draft: null,
+          busy: false,
+          saved: false,
+        });
+      });
+    return () => {
+      alive = false;
+    };
     // The page mounts once; reloads happen through explicit actions.
-  }, [])
+  }, []);
 
   const doSave = async () => {
-    const { view, draft } = state
+    const { view, draft } = state;
     const numbers = [
-      draft.contextWindow, draft.maxTokens, draft.low, draft.medium, draft.xhigh,
-      draft.defaultBudget, draft.keepTurns, draft.toolChars,
-      ...Object.values(draft.lines).flatMap((line) => [line.contextWindow, line.maxTokens, line.low, line.medium, line.xhigh, line.defaultThinkingBudget, line.keepTurns, line.toolChars]),
-    ]
-    if (numbers.some((text) => /^\d+$/.test(String(text)) === false || Number.parseInt(text, 10) <= 0)) {
-      setState((s) => ({ ...s, error: t.invalidNumber }))
-      return
+      draft.contextWindow,
+      draft.maxTokens,
+      draft.low,
+      draft.medium,
+      draft.xhigh,
+      draft.defaultBudget,
+      draft.keepTurns,
+      draft.toolChars,
+      ...Object.values(draft.lines).flatMap((line) => [
+        line.contextWindow,
+        line.maxTokens,
+        line.low,
+        line.medium,
+        line.xhigh,
+        line.defaultThinkingBudget,
+        line.keepTurns,
+        line.toolChars,
+      ]),
+    ];
+    if (
+      numbers.some(
+        (text) =>
+          /^\d+$/.test(String(text)) === false ||
+          Number.parseInt(text, 10) <= 0,
+      )
+    ) {
+      setState((s) => ({ ...s, error: t.invalidNumber }));
+      return;
     }
-    setState((s) => ({ ...s, busy: true, error: null }))
+    setState((s) => ({ ...s, busy: true, error: null }));
     // The top-level fields are what the adapter and the compaction backend
     // read (the active line); `lines` persists every line — connection, window
     // numbers, the thinking budget, AND the trim knobs (the context window is a
@@ -374,7 +531,7 @@ function QwenLocalSectionEntry({ useLocale, load, save }) {
         keepTurns: Number.parseInt(record.keepTurns, 10),
         toolChars: Number.parseInt(record.toolChars, 10),
       },
-    })
+    });
     // The active line's persisted record is the parked record with the flat
     // inputs re-applied (the user edits ride the flat fields, not the record).
     const activeRecord = {
@@ -391,8 +548,8 @@ function QwenLocalSectionEntry({ useLocale, load, save }) {
       images: draft.images,
       keepTurns: draft.keepTurns,
       toolChars: draft.toolChars,
-    }
-    const persistedLines = { ...draft.lines, [draft.dialect]: activeRecord }
+    };
+    const persistedLines = { ...draft.lines, [draft.dialect]: activeRecord };
     const patch = {
       dialect: draft.dialect,
       baseURL: draft.baseURL,
@@ -419,142 +576,347 @@ function QwenLocalSectionEntry({ useLocale, load, save }) {
         keepTurns: Number.parseInt(draft.keepTurns, 10),
         toolChars: Number.parseInt(draft.toolChars, 10),
       },
-    }
-    const result = await save(view, patch)
+    };
+    const result = await save(view, patch);
     if (result.ok) {
-      setState((s) => ({ ...s, busy: false, saved: true, view: result.value, draft: toDraft(result.value.value) }))
-    } else if (result.code === 'settings/conflict') {
-      const fresh = await load()
-      if (fresh.ok) setState({ status: 'ready', error: t.conflict, view: fresh.value, draft: toDraft(fresh.value.value), busy: false, saved: false, agentPresets: fresh.agentPresets ?? null })
-      else setState((s) => ({ ...s, busy: false, error: t.remoteError + fresh.error }))
+      setState((s) => ({
+        ...s,
+        busy: false,
+        saved: true,
+        view: result.value,
+        draft: toDraft(result.value.value),
+      }));
+    } else if (result.code === "settings/conflict") {
+      const fresh = await load();
+      if (fresh.ok)
+        setState({
+          status: "ready",
+          error: t.conflict,
+          view: fresh.value,
+          draft: toDraft(fresh.value.value),
+          busy: false,
+          saved: false,
+          agentPresets: fresh.agentPresets ?? null,
+        });
+      else
+        setState((s) => ({
+          ...s,
+          busy: false,
+          error: t.remoteError + fresh.error,
+        }));
     } else {
-      setState((s) => ({ ...s, busy: false, error: t.remoteError + result.error }))
+      setState((s) => ({
+        ...s,
+        busy: false,
+        error: t.remoteError + result.error,
+      }));
     }
-  }
+  };
 
-  if (state.status === 'loading') {
-    return React.createElement('div', { className: 'qol' }, t.loading)
+  if (state.status === "loading") {
+    return React.createElement("div", { className: "qol" }, t.loading);
   }
-  if (state.status === 'error') {
-    return React.createElement('div', { className: 'qol' }, state.error)
+  if (state.status === "error") {
+    return React.createElement("div", { className: "qol" }, state.error);
   }
-  const { view, draft } = state
+  const { view, draft } = state;
   // The status line: the startup snapshot (the section base) with the live
   // agent-presets default from the same describe response — a default change
   // shows up without a restart.
   const compaction = {
-    presetGenerated: (view.value.compaction ?? { presetGenerated: false }).presetGenerated,
-    defaultPreset: state.agentPresets?.defaultPreset ?? view.value.compaction?.defaultPreset ?? 'standard',
-  }
-  const ninfer = draft.dialect === 'ninfer'
-  return React.createElement('div', { className: 'qol' },
-    React.createElement('h2', { className: 'qol-title' }, t.title),
+    presetGenerated: (view.value.compaction ?? { presetGenerated: false })
+      .presetGenerated,
+    defaultPreset:
+      state.agentPresets?.defaultPreset ??
+      view.value.compaction?.defaultPreset ??
+      "standard",
+  };
+  const ninfer = draft.dialect === "ninfer";
+  return React.createElement(
+    "div",
+    { className: "qol" },
+    React.createElement("h2", { className: "qol-title" }, t.title),
     state.error !== null
-      ? React.createElement('p', { className: 'qol-error', role: 'alert' }, state.error)
+      ? React.createElement(
+          "p",
+          { className: "qol-error", role: "alert" },
+          state.error,
+        )
       : null,
     // Server line: the headline control — it switches the thinking wire for
     // every request the plugin route serves.
-    React.createElement('section', { className: 'qol-group' },
-      React.createElement('h3', { className: 'qol-groupHead' }, t.line),
-      React.createElement('div', { className: 'qol-radioRow' },
-        ['llamacpp', 'ninfer', 'tabbyapi', 'omlx'].map((dialect) =>
-          React.createElement('label', { key: dialect, className: 'qol-radio' },
-            React.createElement('input', {
-              type: 'radio',
-              name: 'qwen38-dialect',
+    React.createElement(
+      "section",
+      { className: "qol-group" },
+      React.createElement("h3", { className: "qol-groupHead" }, t.line),
+      React.createElement(
+        "div",
+        { className: "qol-radioRow" },
+        ["llamacpp", "ninfer", "tabbyapi", "omlx"].map((dialect) =>
+          React.createElement(
+            "label",
+            { key: dialect, className: "qol-radio" },
+            React.createElement("input", {
+              type: "radio",
+              name: "qwen38-dialect",
               checked: draft.dialect === dialect,
-              onChange: () => { switchDialect(dialect) },
+              onChange: () => {
+                switchDialect(dialect);
+              },
             }),
-            dialect === 'ninfer' ? t.dialectNinfer : dialect === 'tabbyapi' ? t.dialectTabbyapi : dialect === 'omlx' ? t.dialectOmlx : t.dialectLlamacpp,
+            dialect === "ninfer"
+              ? t.dialectNinfer
+              : dialect === "tabbyapi"
+                ? t.dialectTabbyapi
+                : dialect === "omlx"
+                  ? t.dialectOmlx
+                  : t.dialectLlamacpp,
           ),
         ),
       ),
     ),
-    React.createElement('section', { className: 'qol-group' },
-      React.createElement('h3', { className: 'qol-groupHead' }, t.connection),
-      React.createElement(Field, { label: t.baseURL },
-        React.createElement(Input, { className: 'qol-input', value: draft.baseURL, onChange: (e) => { setDraft({ baseURL: e.target.value }) } })),
-      React.createElement(Field, { label: t.model },
-        React.createElement(Input, { className: 'qol-input', value: draft.model, onChange: (e) => { setDraft({ model: e.target.value }) } })),
-      React.createElement(Field, { label: t.displayName },
-        React.createElement(Input, { className: 'qol-input', value: draft.displayName, onChange: (e) => { setDraft({ displayName: e.target.value }) } })),
-      React.createElement(Field, { label: t.apiKey },
+    React.createElement(
+      "section",
+      { className: "qol-group" },
+      React.createElement("h3", { className: "qol-groupHead" }, t.connection),
+      React.createElement(
+        Field,
+        { label: t.baseURL },
+        React.createElement(Input, {
+          className: "qol-input",
+          value: draft.baseURL,
+          onChange: (e) => {
+            setDraft({ baseURL: e.target.value });
+          },
+        }),
+      ),
+      React.createElement(
+        Field,
+        { label: t.model },
+        React.createElement(Input, {
+          className: "qol-input",
+          value: draft.model,
+          onChange: (e) => {
+            setDraft({ model: e.target.value });
+          },
+        }),
+      ),
+      React.createElement(
+        Field,
+        { label: t.displayName },
+        React.createElement(Input, {
+          className: "qol-input",
+          value: draft.displayName,
+          onChange: (e) => {
+            setDraft({ displayName: e.target.value });
+          },
+        }),
+      ),
+      React.createElement(
+        Field,
+        { label: t.apiKey },
         // The eye toggle overlays the right edge of the key input (close-aligned
         // to the slot) and swaps between the open and closed icons on click.
-        React.createElement('div', { style: { position: 'relative' } },
+        React.createElement(
+          "div",
+          { style: { position: "relative" } },
           React.createElement(Input, {
-            className: 'qol-input',
-            type: revealedKey ? 'text' : 'password',
+            className: "qol-input",
+            type: revealedKey ? "text" : "password",
             value: draft.apiKey,
-            onChange: (e) => { setDraft({ apiKey: e.target.value }) },
+            onChange: (e) => {
+              setDraft({ apiKey: e.target.value });
+            },
             style: { paddingRight: 34 },
           }),
-          React.createElement('button', {
-            type: 'button',
-            title: revealedKey ? t.concealKey : t.revealKey,
-            onClick: () => { setRevealedKey((v) => !v) },
-            style: {
-              position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
-              background: 'none', border: 'none', cursor: 'pointer', color: '#8b93a7', padding: 4,
-              display: 'flex', alignItems: 'center',
+          React.createElement(
+            "button",
+            {
+              type: "button",
+              title: revealedKey ? t.concealKey : t.revealKey,
+              onClick: () => {
+                setRevealedKey((v) => !v);
+              },
+              style: {
+                position: "absolute",
+                right: 6,
+                top: "50%",
+                transform: "translateY(-50%)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: "#8b93a7",
+                padding: 4,
+                display: "flex",
+                alignItems: "center",
+              },
             },
-          }, revealedKey ? EYE_OPEN : EYE_CLOSED))),
-      React.createElement('p', { className: 'qol-hint' }, t.apiKeyHint),
-    ),
-    React.createElement('section', { className: 'qol-group' },
-      React.createElement('h3', { className: 'qol-groupHead' }, t.window),
-      React.createElement('div', { className: 'qol-row2' },
-        React.createElement(Field, { label: t.contextWindow },
-          React.createElement(Input, { className: 'qol-input', inputMode: 'numeric', value: draft.contextWindow, onChange: digitsOnly((v) => { setDraft({ contextWindow: v }) }) })),
-        React.createElement(Field, { label: t.maxTokens },
-          React.createElement(Input, { className: 'qol-input', inputMode: 'numeric', value: draft.maxTokens, onChange: digitsOnly((v) => { setDraft({ maxTokens: v }) }) })),
-      ),
-    ),
-    React.createElement('section', { className: 'qol-group' },
-      React.createElement('h3', { className: 'qol-groupHead' }, t.thinking),
-      React.createElement('div', { className: ninfer ? 'qol-row3 qol-muted' : 'qol-row3' },
-        ['low', 'medium', 'xhigh'].map((effort) =>
-          React.createElement(Field, { key: effort, label: effort },
-            React.createElement(Input, { className: 'qol-input', inputMode: 'numeric', disabled: ninfer, value: draft[effort], onChange: digitsOnly((v) => { setDraft({ [effort]: v }) }) })),
+            revealedKey ? EYE_OPEN : EYE_CLOSED,
+          ),
         ),
       ),
-      React.createElement('p', { className: 'qol-hint' }, ninfer ? t.thinkingHintNinfer : draft.dialect === 'tabbyapi' ? t.thinkingHintTabbyapi : draft.dialect === 'omlx' ? t.thinkingHintOmlx : t.thinkingHintLlamacpp),
+      React.createElement("p", { className: "qol-hint" }, t.apiKeyHint),
+    ),
+    React.createElement(
+      "section",
+      { className: "qol-group" },
+      React.createElement("h3", { className: "qol-groupHead" }, t.window),
+      React.createElement(
+        "div",
+        { className: "qol-row2" },
+        React.createElement(
+          Field,
+          { label: t.contextWindow },
+          React.createElement(Input, {
+            className: "qol-input",
+            inputMode: "numeric",
+            value: draft.contextWindow,
+            onChange: digitsOnly((v) => {
+              setDraft({ contextWindow: v });
+            }),
+          }),
+        ),
+        React.createElement(
+          Field,
+          { label: t.maxTokens },
+          React.createElement(Input, {
+            className: "qol-input",
+            inputMode: "numeric",
+            value: draft.maxTokens,
+            onChange: digitsOnly((v) => {
+              setDraft({ maxTokens: v });
+            }),
+          }),
+        ),
+      ),
+    ),
+    React.createElement(
+      "section",
+      { className: "qol-group" },
+      React.createElement("h3", { className: "qol-groupHead" }, t.thinking),
+      React.createElement(
+        "div",
+        { className: ninfer ? "qol-row3 qol-muted" : "qol-row3" },
+        ["low", "medium", "xhigh"].map((effort) =>
+          React.createElement(
+            Field,
+            { key: effort, label: effort },
+            React.createElement(Input, {
+              className: "qol-input",
+              inputMode: "numeric",
+              disabled: ninfer,
+              value: draft[effort],
+              onChange: digitsOnly((v) => {
+                setDraft({ [effort]: v });
+              }),
+            }),
+          ),
+        ),
+      ),
+      React.createElement(
+        "p",
+        { className: "qol-hint" },
+        ninfer
+          ? t.thinkingHintNinfer
+          : draft.dialect === "tabbyapi"
+            ? t.thinkingHintTabbyapi
+            : draft.dialect === "omlx"
+              ? t.thinkingHintOmlx
+              : t.thinkingHintLlamacpp,
+      ),
     ),
     // Compaction: the wiring status first (the trim controls only apply to
     // sessions using the qwen38 preset), then the trim knobs.
-    React.createElement('section', { className: 'qol-group' },
-      React.createElement('h3', { className: 'qol-groupHead' }, t.compaction),
-      React.createElement('div', { className: 'qol-statusRow' },
-        React.createElement(StateDot, { state: compactionStatusState(compaction), className: 'qol-statusDot' }),
+    React.createElement(
+      "section",
+      { className: "qol-group" },
+      React.createElement("h3", { className: "qol-groupHead" }, t.compaction),
+      React.createElement(
+        "div",
+        { className: "qol-statusRow" },
+        React.createElement(StateDot, {
+          state: compactionStatusState(compaction),
+          className: "qol-statusDot",
+        }),
         compactionStatusCopy(compaction, t),
       ),
-      React.createElement('p', { className: 'qol-hint' }, t.compactionHint),
-      React.createElement('div', { className: 'qol-field' },
-        React.createElement('div', { className: 'qol-switchHead' },
-          React.createElement('span', { className: 'qol-switchLabel' }, t.summarizeImages),
+      React.createElement("p", { className: "qol-hint" }, t.compactionHint),
+      React.createElement(
+        "div",
+        { className: "qol-field" },
+        React.createElement(
+          "div",
+          { className: "qol-switchHead" },
+          React.createElement(
+            "span",
+            { className: "qol-switchLabel" },
+            t.summarizeImages,
+          ),
           React.createElement(Switch, {
-            checked: draft.images === 'keep',
-            onChange: (next) => { setDraft({ images: next ? 'keep' : 'strip' }) },
+            checked: draft.images === "keep",
+            onChange: (next) => {
+              setDraft({ images: next ? "keep" : "strip" });
+            },
             label: t.summarizeImages,
           }),
         ),
-        React.createElement('p', { className: 'qol-hint' }, t.summarizeHint),
+        React.createElement("p", { className: "qol-hint" }, t.summarizeHint),
       ),
-      React.createElement('div', { className: 'qol-row2' },
-        React.createElement(Field, { label: t.keepTurns },
-          React.createElement(Input, { className: 'qol-input', inputMode: 'numeric', value: draft.keepTurns, onChange: digitsOnly((v) => { setDraft({ keepTurns: v }) }) })),
-        React.createElement(Field, { label: t.toolChars },
-          React.createElement(Input, { className: 'qol-input', inputMode: 'numeric', value: draft.toolChars, onChange: digitsOnly((v) => { setDraft({ toolChars: v }) }) })),
+      React.createElement(
+        "div",
+        { className: "qol-row2" },
+        React.createElement(
+          Field,
+          { label: t.keepTurns },
+          React.createElement(Input, {
+            className: "qol-input",
+            inputMode: "numeric",
+            value: draft.keepTurns,
+            onChange: digitsOnly((v) => {
+              setDraft({ keepTurns: v });
+            }),
+          }),
+        ),
+        React.createElement(
+          Field,
+          { label: t.toolChars },
+          React.createElement(Input, {
+            className: "qol-input",
+            inputMode: "numeric",
+            value: draft.toolChars,
+            onChange: digitsOnly((v) => {
+              setDraft({ toolChars: v });
+            }),
+          }),
+        ),
       ),
     ),
-    React.createElement('div', { className: 'qol-footer' },
-      React.createElement(Button, { variant: 'primary', disabled: state.busy, onClick: () => { void doSave() } }, state.busy ? t.saving : t.save),
-      state.saved ? React.createElement('span', { className: 'qol-saved' }, t.saved) : null,
+    React.createElement(
+      "div",
+      { className: "qol-footer" },
+      React.createElement(
+        Button,
+        {
+          variant: "primary",
+          disabled: state.busy,
+          onClick: () => {
+            void doSave();
+          },
+        },
+        state.busy ? t.saving : t.save,
+      ),
+      state.saved
+        ? React.createElement("span", { className: "qol-saved" }, t.saved)
+        : null,
       state.busy === false && view !== null
-        ? React.createElement('span', { className: 'qol-rev' }, `r${view.revision}`)
+        ? React.createElement(
+            "span",
+            { className: "qol-rev" },
+            `r${view.revision}`,
+          )
         : null,
     ),
-  )
+  );
 }
 
 /**
@@ -562,40 +924,68 @@ function QwenLocalSectionEntry({ useLocale, load, save }) {
  * @param ctx - the client root context (slots and the settings Remote).
  */
 export function apply(ctx) {
-  const locale = () => (ctx.locale.getSnapshot().active === 'zh' ? 'zh' : 'en')
-  ctx.slots.inject('settings.section', () => ctx.slots.register(
-    {
-      name: 'settings.section',
-      id: 'qwen38-local-qol',
-      order: 90,
-      label: () => (locale() === 'en' ? 'Qwen3.8 Local' : 'Qwen3.8 本地'),
-      inject: () => ({
-        hooks: { locale: ctx.locale },
-        load: async () => {
-          const response = await ctx.remote.settings.describe()
-          if (response.ok !== true) return { ok: false, error: response.error.message }
-          const view = response.value.namespaces.find((entry) => entry.ns === NS)
-          if (view === undefined) return { ok: false, error: 'ns-missing' }
-          const presets = response.value.namespaces.find((entry) => entry.ns === 'agent-presets')
-          return {
-            ok: true,
-            value: view,
-            agentPresets: presets === undefined ? null : { revision: presets.revision, defaultPreset: presets.value?.default ?? null },
-          }
-        },
-        save: async (view, patch) => {
-          const response = await ctx.remote.settings.update(NS, patch, view.revision)
-          if (response.ok !== true) return { ok: false, code: response.error.code, error: response.error.message }
-          return { ok: true, value: response.value }
-        },
-      }),
-    },
-    QwenLocalSectionEntry,
-  ))
+  const locale = () => (ctx.locale.getSnapshot().active === "zh" ? "zh" : "en");
+  ctx.slots.inject("settings.section", () =>
+    ctx.slots.register(
+      {
+        name: "settings.section",
+        id: "qwen38-local-qol",
+        order: 90,
+        label: () => (locale() === "en" ? "Qwen3.8 Local" : "Qwen3.8 本地"),
+        inject: () => ({
+          hooks: { locale: ctx.locale },
+          load: async () => {
+            const response = await ctx.remote.settings.describe();
+            const view = response.namespaces.find((entry) => entry.ns === NS);
+            if (view === undefined) return { ok: false, error: "ns-missing" };
+            const presets = response.namespaces.find(
+              (entry) => entry.ns === "agent-presets",
+            );
+            return {
+              ok: true,
+              value: view,
+              agentPresets:
+                presets === undefined
+                  ? null
+                  : {
+                      revision: presets.revision,
+                      defaultPreset: presets.value?.default ?? null,
+                    },
+            };
+          },
+          save: async (view, patch) => {
+            try {
+              await ctx.remote.settings.update(NS, patch, view.revision);
+              const fresh = await ctx.remote.settings.describe();
+              const updated = fresh.namespaces.find((entry) => entry.ns === NS);
+              return { ok: true, value: updated };
+            } catch (error) {
+              if (
+                error?.code === "settings/conflict" ||
+                /conflict/i.test(error?.message ?? "")
+              ) {
+                return {
+                  ok: false,
+                  code: "settings/conflict",
+                  error: error.message,
+                };
+              }
+              return {
+                ok: false,
+                code: "error",
+                error: error?.message ?? String(error),
+              };
+            }
+          },
+        }),
+      },
+      QwenLocalSectionEntry,
+    ),
+  );
 }
 
 /** Plugin name, mirroring the host half. */
-export const name = 'qwen38-local-qol'
+export const name = "qwen38-local-qol";
 
 /** Hard client dependencies. `remote` and the dotted `remote.settings` are Cordis client services — the gateway provides each Remote namespace under its dotted name, and the ctx proxy resolves `ctx.remote.settings` against that one; an undeclared service is absent from the plugin's ctx. */
-export const inject = ['slots', 'locale', 'remote', 'remote.settings']
+export const inject = ["slots", "locale", "remote", "remote.settings"];

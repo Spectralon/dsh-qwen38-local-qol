@@ -13,7 +13,7 @@ import {
   LlmError,
   attributionHeaders,
   errorChain,
-} from '@deepseek-ai/dsh-llm'
+} from "@deepseek-ai/dsh-llm";
 import {
   chatCompletionsUrl,
   chunksFromCompletion,
@@ -26,19 +26,19 @@ import {
   UNSUPPORTED_CONTENT_CODE,
   PROVIDER_PROTOCOL_ERROR_CODE,
   PROVIDER_ERROR_CODE,
-} from './wire.js'
+} from "./wire.js";
 
 /** The server could not be reached at all (refused, DNS failure, reset). */
-export const PROVIDER_UNREACHABLE_CODE = 'PROVIDER_UNREACHABLE'
+export const PROVIDER_UNREACHABLE_CODE = "PROVIDER_UNREACHABLE";
 
 /** The server answered with a non-2xx status. */
-export const PROVIDER_HTTP_ERROR_CODE = 'PROVIDER_HTTP_ERROR'
+export const PROVIDER_HTTP_ERROR_CODE = "PROVIDER_HTTP_ERROR";
 
 /** Human-readable provider name reported for every route this adapter owns. */
-export const PROVIDER_NAME = 'Qwen3.8 local'
+export const PROVIDER_NAME = "Qwen3.8 local";
 
 /** How much of an error body is quoted back in the failure message. */
-const MAX_ERROR_BODY_CHARS = 500
+const MAX_ERROR_BODY_CHARS = 500;
 
 /**
  * Conservative visual-token estimate for one image on the llama.cpp line:
@@ -46,7 +46,7 @@ const MAX_ERROR_BODY_CHARS = 500
  * window (1024–1536 in the production bat), so the clamp maximum is the
  * safe upper bound for the token meter.
  */
-const LLMACPP_IMAGE_TOKEN_CAP = 1536
+const LLMACPP_IMAGE_TOKEN_CAP = 1536;
 
 /**
  * Adapter for the local Qwen3.8 line. It owns no credentials store, no model
@@ -55,13 +55,14 @@ const LLMACPP_IMAGE_TOKEN_CAP = 1536
  * code rather than an empty stream.
  */
 export class QwenLocalAdapter extends LlmAdapter {
-  #configSource
-  #fetch
+  #config;
+  #fetch;
+  #attachment;
 
   /**
    * @param config - resolved configuration from `resolveConfig()` (or a test
-   * double), or a zero-arg source returning one: the settings section makes
-   * the resolved value change live, and the adapter reads it per request.
+   * double). The config is a direct object; the plugin re-applies with a new
+   * config on settings change, creating a fresh adapter instance.
    * @param config.baseURL - server base URL, including `/v1`.
    * @param config.model - model id to send when a request omits one.
    * @param config.displayName - selector name shown in the GUI; falls back to the model id.
@@ -76,46 +77,42 @@ export class QwenLocalAdapter extends LlmAdapter {
    * @param config.fetch - injectable fetch, for tests.
    */
   constructor(config = {}) {
-    super()
-    this.#configSource = typeof config === 'function' ? config : () => config
-    this.#fetch = this.#configSource().fetch ?? globalThis.fetch
-  }
-
-  /** The live resolved configuration (settings section value when installed). */
-  get #config() {
-    return this.#configSource()
-  }
-
-  get #baseURL() {
-    return this.#config.baseURL
-  }
-
-  get #model() {
-    return this.#config.model
-  }
-
-  get #displayName() {
-    return this.#config.displayName || this.#config.model
-  }
-
-  get #apiKey() {
-    return this.#config.apiKey || undefined
+    super();
+    this.#config = config;
+    this.#fetch = config.fetch ?? globalThis.fetch;
+    this.#attachment = config.attachment;
   }
 
   /**
-   * The optional attachment store, read live: the plugin supplies it through
-   * a `ctx.inject` child fiber whose callback can run after this adapter is
-   * constructed, so a construction-time capture would lock in `undefined`
-   * forever. `undefined` where the profile has no store: image blocks then
-   * degrade to text placeholders.
+   * Set the attachment service after construction. The plugin supplies it
+   * through a `ctx.inject` child fiber whose callback can run after this
+   * adapter is constructed. `undefined` where the profile has no store:
+   * image blocks then degrade to text placeholders.
+   * @param attachment - the attachment service, or undefined.
    */
-  get #attachment() {
-    return this.#configSource().attachment
+  setAttachment(attachment) {
+    this.#attachment = attachment;
+  }
+
+  get #baseURL() {
+    return this.#config.baseURL;
+  }
+
+  get #model() {
+    return this.#config.model;
+  }
+
+  get #displayName() {
+    return this.#config.displayName || this.#config.model;
+  }
+
+  get #apiKey() {
+    return this.#config.apiKey || undefined;
   }
 
   /** The chat-completions endpoint this adapter posts to. */
   get url() {
-    return chatCompletionsUrl(this.#baseURL)
+    return chatCompletionsUrl(this.#baseURL);
   }
 
   /**
@@ -123,7 +120,7 @@ export class QwenLocalAdapter extends LlmAdapter {
    * @returns display metadata for that route.
    */
   providerInfo(provider) {
-    return { id: provider, name: PROVIDER_NAME }
+    return { id: provider, name: PROVIDER_NAME };
   }
 
   /**
@@ -136,7 +133,14 @@ export class QwenLocalAdapter extends LlmAdapter {
    * @returns the single configured model entry.
    */
   async listModels(provider) {
-    return [{ provider, id: this.#model, name: this.#displayName, inputModalities: ['text', 'image'] }]
+    return [
+      {
+        provider,
+        id: this.#model,
+        name: this.#displayName,
+        inputModalities: ["text", "image"],
+      },
+    ];
   }
 
   /**
@@ -150,9 +154,11 @@ export class QwenLocalAdapter extends LlmAdapter {
    * @returns provider/model identity plus context, call-default, and reasoning metadata.
    */
   async resolveModel(provider, model) {
-    const efforts = [{ id: 'off', name: 'off' }]
-    for (const [id, budgetTokens] of Object.entries(this.#config.thinkingBudgets ?? {})) {
-      efforts.push({ id, name: id, budgetTokens })
+    const efforts = [{ id: "off", name: "off" }];
+    for (const [id, budgetTokens] of Object.entries(
+      this.#config.thinkingBudgets ?? {},
+    )) {
+      efforts.push({ id, name: id, budgetTokens });
     }
     return {
       provider,
@@ -163,18 +169,16 @@ export class QwenLocalAdapter extends LlmAdapter {
       // Both local Qwen lines are vision-capable (NInfer --vision; the llama
       // line ships an mmproj), and the image-capability gate resolves this
       // method — not listModels — so the modalities must be declared here too.
-      inputModalities: ['text', 'image'],
+      inputModalities: ["text", "image"],
       // Declaring the default suppresses the selector's built-in "Default"
       // row, which on this line is redundant with `off`; undeclared requests
       // materialize the default instead of hitting the server default.
       reasoning: { efforts, defaultEffort: this.#config.defaultEffort },
-    }
+    };
   }
 
   /**
-   * Synchronous per-request image pricing for the token meter. The alpha.3
-   * meter resolves this unguarded on every measurement, and the rc.2 base
-   * class predates the seam, so the adapter supplies the method. Every local
+   * Synchronous per-request image pricing for the token meter. Every local
    * Qwen line is vision-capable: the NInfer line prices with its exact patch
    * formula; the llama.cpp line is clamped server-side, so the clamp maximum
    * is the conservative estimate; the TabbyAPI line (ExLlamaV3) prices its
@@ -188,28 +192,30 @@ export class QwenLocalAdapter extends LlmAdapter {
    * @returns one synchronous price per request image occurrence, or undefined where the capacity is unknown.
    */
   imageRequestPricing(_provider, _model) {
-    const dialect = this.#config.dialect
-    if (dialect === 'tabbyapi' || dialect === 'omlx') return undefined
-    const llamacpp = dialect === 'llamacpp'
-    // The meter prices ImageBlocks ({ type:'image', attachment, offloaded? }):
+    const dialect = this.#config.dialect;
+    if (dialect === "tabbyapi" || dialect === "omlx") return undefined;
+    const llamacpp = dialect === "llamacpp";
+    // The meter prices ImageBlocks ({ type:'image', attachment, offloaded?}):
     // dimensions live on the durable attachment ref, never on the block.
     // Offloaded occurrences ride as placeholder text (no visual tokens);
     // a ref missing dimensions prices at a 1024x1024 guess rather than NaN,
     // because a NaN price poisons the meter's walk-back (>= checks go false).
     return {
-      priceImages: (images) => images.map((ref) => {
-        if (ref.offloaded) return { visualTokens: 0, text: '' }
-        if (llamacpp) return { visualTokens: LLMACPP_IMAGE_TOKEN_CAP, text: '' }
-        const attachment = ref.attachment
-        return {
-          visualTokens: ninferVisionTokens(
-            attachment?.width ?? 1024,
-            attachment?.height ?? 1024,
-          ),
-          text: '',
-        }
-      }),
-    }
+      priceImages: (images) =>
+        images.map((ref) => {
+          if (ref.offloaded) return { visualTokens: 0, text: "" };
+          if (llamacpp)
+            return { visualTokens: LLMACPP_IMAGE_TOKEN_CAP, text: "" };
+          const attachment = ref.attachment;
+          return {
+            visualTokens: ninferVisionTokens(
+              attachment?.width ?? 1024,
+              attachment?.height ?? 1024,
+            ),
+            text: "",
+          };
+        }),
+    };
   }
 
   /**
@@ -218,33 +224,34 @@ export class QwenLocalAdapter extends LlmAdapter {
    * @yields harness stream chunks, terminal `finish` last.
    */
   async *stream(options) {
-    assertRepresentable(options)
-    const imageDataUrls = await resolveImageDataUrls(this.#attachment, options)
-    const url = this.url
-    const response = await this.#post(url, options, imageDataUrls)
+    assertRepresentable(options);
+    const imageDataUrls = await resolveImageDataUrls(this.#attachment, options);
+    const url = this.url;
+    const response = await this.#post(url, options, imageDataUrls);
 
     if (!response.ok) {
-      const detail = await response.text().catch(() => '')
+      const detail = await response.text().catch(() => "");
       // A vision raw-patch budget rejection is a provider-confirmed context
       // overflow: only the canonical CONTEXT_WINDOW_EXCEEDED code lets the
       // harness's overflow recovery compact below the normal threshold and
       // retry this step instead of surfacing the failure.
-      const code = response.status === 400 && /media_budget_exceeded/.test(detail)
-        ? CONTEXT_WINDOW_EXCEEDED_CODE
-        : PROVIDER_HTTP_ERROR_CODE
+      const code =
+        response.status === 400 && /media_budget_exceeded/.test(detail)
+          ? CONTEXT_WINDOW_EXCEEDED_CODE
+          : PROVIDER_HTTP_ERROR_CODE;
       throw new LlmError(
-        `dsh-qwen38-local-qol: server at ${url} returned HTTP ${response.status}${detail ? `: ${detail.slice(0, MAX_ERROR_BODY_CHARS)}` : ''}`,
+        `dsh-qwen38-local-qol: server at ${url} returned HTTP ${response.status}${detail ? `: ${detail.slice(0, MAX_ERROR_BODY_CHARS)}` : ""}`,
         code,
         { status: response.status },
-      )
+      );
     }
 
-    if ((response.headers.get('content-type') ?? '').includes('json')) {
-      yield* chunksFromCompletion(await response.json())
-      return
+    if ((response.headers.get("content-type") ?? "").includes("json")) {
+      yield* chunksFromCompletion(await response.json());
+      return;
     }
 
-    yield* this.#streamSse(response, options)
+    yield* this.#streamSse(response, options);
   }
 
   /**
@@ -257,20 +264,22 @@ export class QwenLocalAdapter extends LlmAdapter {
   async #post(url, options, imageDataUrls) {
     try {
       return await this.#fetch(url, {
-        method: 'POST',
+        method: "POST",
         headers: requestHeaders(attributionHeaders(), this.#apiKey),
-        body: JSON.stringify(buildQwenBody(options, this.#model, this.#config, imageDataUrls)),
+        body: JSON.stringify(
+          buildQwenBody(options, this.#model, this.#config, imageDataUrls),
+        ),
         signal: options.signal,
-      })
+      });
     } catch (cause) {
       // A caller-driven abort is the caller's own outcome, not a dead server:
       // the runtime turns it into an `aborted` finish.
-      if (options.signal?.aborted) throw cause
+      if (options.signal?.aborted) throw cause;
       throw new LlmError(
         `dsh-qwen38-local-qol: cannot reach the Qwen3.8 server at ${url} (is the server running?): ${errorChain(cause)}`,
         PROVIDER_UNREACHABLE_CODE,
         { cause },
-      )
+      );
     }
   }
 
@@ -281,40 +290,44 @@ export class QwenLocalAdapter extends LlmAdapter {
    * @yields harness stream chunks.
    */
   async *#streamSse(response, options) {
-    const parser = createSseParser()
-    const translator = createChunkTranslator()
-    const decoder = new TextDecoder()
-    let done = false
+    const parser = createSseParser();
+    const translator = createChunkTranslator();
+    const decoder = new TextDecoder();
+    let done = false;
 
     const handle = function* (payloads) {
       for (const payload of payloads) {
-        if (done) return
-        if (payload === '[DONE]') {
-          done = true
-          return
+        if (done) return;
+        if (payload === "[DONE]") {
+          done = true;
+          return;
         }
-        yield* translator.accept(parseFrame(payload))
+        yield* translator.accept(parseFrame(payload));
       }
-    }
+    };
 
     try {
       for await (const bytes of iterateBody(response, this.url)) {
-        yield* handle(parser.push(decoder.decode(bytes, { stream: true })))
-        if (done) break
+        yield* handle(parser.push(decoder.decode(bytes, { stream: true })));
+        if (done) break;
       }
-      if (!done) yield* handle(parser.flush())
+      if (!done) yield* handle(parser.flush());
     } catch (cause) {
-      if (options.signal?.aborted || cause instanceof LlmError) throw cause
+      if (options.signal?.aborted || cause instanceof LlmError) throw cause;
       const failure = new LlmError(
         `dsh-qwen38-local-qol: Qwen3.8 stream from ${this.url} ended badly: ${errorChain(cause)}`,
         PROVIDER_UNREACHABLE_CODE,
         { cause },
+      );
+      if (
+        cause?.code === PROVIDER_PROTOCOL_ERROR_CODE ||
+        cause?.code === PROVIDER_ERROR_CODE
       )
-      if (cause?.code === PROVIDER_PROTOCOL_ERROR_CODE || cause?.code === PROVIDER_ERROR_CODE) failure.code = cause.code
-      throw failure
+        failure.code = cause.code;
+      throw failure;
     }
 
-    yield* translator.end()
+    yield* translator.end();
   }
 }
 
@@ -329,19 +342,27 @@ export class QwenLocalAdapter extends LlmAdapter {
  * @returns a map from image block identity to its `data:` URL.
  */
 async function resolveImageDataUrls(attachment, options) {
-  const urls = new Map()
-  if (attachment === undefined || typeof attachment.readImage !== 'function') return urls
+  const urls = new Map();
+  if (attachment === undefined || typeof attachment.readImage !== "function")
+    return urls;
   for (const message of options.messages ?? []) {
     for (const block of message.content ?? []) {
-      const images = block.type === 'image'
-        ? [block]
-        : block.type === 'tool-result'
-          ? (block.content ?? []).filter((inner) => inner.type === 'image')
-          : []
+      const images =
+        block.type === "image"
+          ? [block]
+          : block.type === "tool-result"
+            ? (block.content ?? []).filter((inner) => inner.type === "image")
+            : [];
       for (const image of images) {
         try {
-          const stored = await attachment.readImage(image.attachment, options.signal)
-          urls.set(image, `data:${stored.ref.mediaType};base64,${Buffer.from(stored.data).toString('base64')}`)
+          const stored = await attachment.readImage(
+            image.attachment,
+            options.signal,
+          );
+          urls.set(
+            image,
+            `data:${stored.ref.mediaType};base64,${Buffer.from(stored.data).toString("base64")}`,
+          );
         } catch {
           // Unreadable image (store churn, digest mismatch): the placeholder
           // keeps the request honest about what the model will not see.
@@ -349,7 +370,7 @@ async function resolveImageDataUrls(attachment, options) {
       }
     }
   }
-  return urls
+  return urls;
 }
 
 /**
@@ -360,33 +381,43 @@ async function resolveImageDataUrls(attachment, options) {
  */
 function assertRepresentable(options) {
   for (const message of options.messages ?? []) {
-    if (message.role === 'assistant') {
+    if (message.role === "assistant") {
       for (const block of message.content ?? []) {
-        if (block.type === 'image') {
+        if (block.type === "image") {
           throw new LlmError(
-            'dsh-qwen38-local-qol: assistant messages cannot carry image blocks to the local Qwen3.8 server',
+            "dsh-qwen38-local-qol: assistant messages cannot carry image blocks to the local Qwen3.8 server",
             UNSUPPORTED_CONTENT_CODE,
-          )
+          );
         }
-        if (block.type !== 'text' && block.type !== 'reasoning' && block.type !== 'tool-call') {
+        if (
+          block.type !== "text" &&
+          block.type !== "reasoning" &&
+          block.type !== "tool-call"
+        ) {
           throw new LlmError(
             `dsh-qwen38-local-qol: cannot send an assistant "${block.type}" content block`,
             UNSUPPORTED_CONTENT_CODE,
-          )
+          );
         }
       }
-      continue
+      continue;
     }
     for (const block of message.content ?? []) {
       // A reasoning block on a non-assistant message is context, not wire
       // content: the projection drops it (subagent-settled notices embed the
       // child's closing thinking; compaction checkpoints can carry the
       // summarizer's).
-      if (block.type === 'text' || block.type === 'image' || block.type === 'tool-result' || block.type === 'reasoning') continue
+      if (
+        block.type === "text" ||
+        block.type === "image" ||
+        block.type === "tool-result" ||
+        block.type === "reasoning"
+      )
+        continue;
       throw new LlmError(
         `dsh-qwen38-local-qol: cannot send a "${block.type}" content block to the local Qwen3.8 server`,
         UNSUPPORTED_CONTENT_CODE,
-      )
+      );
     }
   }
 }
@@ -403,7 +434,7 @@ async function* iterateBody(response, endpoint) {
     throw new LlmError(
       `dsh-qwen38-local-qol: server at ${endpoint} returned no response body`,
       PROVIDER_UNREACHABLE_CODE,
-    )
+    );
   }
-  yield* response.body
+  yield* response.body;
 }

@@ -2,37 +2,39 @@
  * The adapter end-to-end against an in-memory fetch: stream translation,
  * error codes, model resolution, and the exact wire body per dialect.
  */
-import test from 'node:test'
-import assert from 'node:assert/strict'
-import { QwenLocalAdapter } from '../src/adapter.js'
+import test from "node:test";
+import assert from "node:assert/strict";
+import { QwenLocalAdapter } from "../src/adapter.js";
 
 const CONFIG = {
-  baseURL: 'http://local:8082/v1',
-  model: 'qwen',
+  baseURL: "http://local:8082/v1",
+  model: "qwen",
   apiKey: undefined,
-  dialect: 'ninfer',
+  dialect: "ninfer",
   contextWindow: 262144,
   maxTokens: 52428,
   thinkingBudgets: { low: 4096, medium: 8192, xhigh: 16384 },
   thinkingLevelMap: {},
   includeUsage: false,
-  defaultEffort: 'medium',
-}
+  defaultEffort: "medium",
+};
 
-const encoder = new TextEncoder()
+const encoder = new TextEncoder();
 
 /** Build a fake streaming (SSE) response from raw frame strings. */
 function sseResponse(frames) {
   const body = (async function* () {
-    for (const frame of frames) yield encoder.encode(frame)
-  })()
+    for (const frame of frames) yield encoder.encode(frame);
+  })();
   return {
     ok: true,
     status: 200,
-    headers: { get: (name) => (name === 'content-type' ? 'text/event-stream' : null) },
+    headers: {
+      get: (name) => (name === "content-type" ? "text/event-stream" : null),
+    },
     body,
-    text: async () => frames.join(''),
-  }
+    text: async () => frames.join(""),
+  };
 }
 
 /** Build a fake non-streaming (JSON) response from a body object. */
@@ -40,391 +42,613 @@ function jsonResponse(body) {
   return {
     ok: true,
     status: 200,
-    headers: { get: (name) => (name === 'content-type' ? 'application/json' : null) },
+    headers: {
+      get: (name) => (name === "content-type" ? "application/json" : null),
+    },
     body: null,
     json: async () => body,
     text: async () => JSON.stringify(body),
-  }
+  };
 }
 
 /** A fake fetch capturing every request. */
 function fakeFetch(response) {
-  const requests = []
+  const requests = [];
   const fetch = async (url, init) => {
-    requests.push({ url, init })
-    return response
-  }
-  return { fetch, requests }
+    requests.push({ url, init });
+    return response;
+  };
+  return { fetch, requests };
 }
 
 const options = () => ({
-  provider: 'qwen38',
-  model: 'qwen',
-  reasoningEffort: 'medium',
+  provider: "qwen38",
+  model: "qwen",
+  reasoningEffort: "medium",
   maxTokens: 52428,
-  system: 'sys',
-  messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+  system: "sys",
+  messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
   signal: new AbortController().signal,
-})
+});
 
-test('stream: reasoning + text + usage with reasoning tokens, terminal finish', async () => {
+test("stream: reasoning + text + usage with reasoning tokens, terminal finish", async () => {
   const frames = [
     'data: {"choices":[{"delta":{"reasoning_content":"r1"}}]}\n\n',
     'data: {"choices":[{"delta":{"reasoning_content":"r2"}}]}\n\n',
     'data: {"choices":[{"delta":{"content":"hello"}}]}\n\n',
     'data: {"choices":[{"delta":{"content":" world"}}]}\n\n',
     'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":40,"total_tokens":52,"completion_tokens_details":{"reasoning_tokens":30}}}\n\n',
-    'data: [DONE]\n\n',
-  ]
-  const { fetch, requests } = fakeFetch(sseResponse(frames))
-  const adapter = new QwenLocalAdapter({ ...CONFIG, fetch })
-  const chunks = []
-  for await (const chunk of adapter.stream(options())) chunks.push(chunk)
+    "data: [DONE]\n\n",
+  ];
+  const { fetch, requests } = fakeFetch(sseResponse(frames));
+  const adapter = new QwenLocalAdapter({ ...CONFIG, fetch });
+  const chunks = [];
+  for await (const chunk of adapter.stream(options())) chunks.push(chunk);
 
-  const types = chunks.map((chunk) => `${chunk.type}:${chunk.index ?? ''}`)
-  assert.deepEqual(types, ['block-start:0', 'reasoning-delta:0', 'reasoning-delta:0', 'block-start:1', 'text-delta:1', 'text-delta:1', 'block-end:0', 'block-end:1', 'usage:', 'finish:'])
-  assert.deepEqual(chunks.find((c) => c.type === 'usage').usage,
-    { inputTokens: 12, outputTokens: 40, totalTokens: 52, reasoningTokens: 30 })
-  assert.deepEqual(chunks.at(-1), { type: 'finish', reason: { kind: 'stop' } })
+  const types = chunks.map((chunk) => `${chunk.type}:${chunk.index ?? ""}`);
+  assert.deepEqual(types, [
+    "block-start:0",
+    "reasoning-delta:0",
+    "reasoning-delta:0",
+    "block-start:1",
+    "text-delta:1",
+    "text-delta:1",
+    "block-end:0",
+    "block-end:1",
+    "usage:",
+    "finish:",
+  ]);
+  assert.deepEqual(chunks.find((c) => c.type === "usage").usage, {
+    inputTokens: 12,
+    outputTokens: 40,
+    totalTokens: 52,
+    reasoningTokens: 30,
+  });
+  assert.deepEqual(chunks.at(-1), { type: "finish", reason: { kind: "stop" } });
 
   // The exact wire body: ninfer dialect — effort top-level, kwargs only enable_thinking,
   // and the selected level's hard budget on the request.
-  assert.equal(requests.length, 1)
-  assert.equal(requests[0].url, 'http://local:8082/v1/chat/completions')
-  const sent = JSON.parse(requests[0].init.body)
-  assert.equal(sent.reasoning_effort, 'medium')
-  assert.deepEqual(sent.chat_template_kwargs, { enable_thinking: true })
-  assert.equal(sent.reasoning_budget_tokens, 8192)
-  assert.equal(sent.max_tokens, 52428)
-  assert.equal(sent.stream, true)
-  assert.equal(sent.model, 'qwen')
-  assert.deepEqual(sent.messages[0], { role: 'system', content: 'sys' })
-  assert.deepEqual(sent.messages[1], { role: 'user', content: 'hi' })
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, "http://local:8082/v1/chat/completions");
+  const sent = JSON.parse(requests[0].init.body);
+  assert.equal(sent.reasoning_effort, "medium");
+  assert.deepEqual(sent.chat_template_kwargs, { enable_thinking: true });
+  assert.equal(sent.reasoning_budget_tokens, 8192);
+  assert.equal(sent.max_tokens, 52428);
+  assert.equal(sent.stream, true);
+  assert.equal(sent.model, "qwen");
+  assert.deepEqual(sent.messages[0], { role: "system", content: "sys" });
+  assert.deepEqual(sent.messages[1], { role: "user", content: "hi" });
   // Headers: attribution merged, content-type set, no auth without an api key.
-  assert.equal(requests[0].init.headers['content-type'], 'application/json')
-  assert.equal(requests[0].init.headers.accept, 'text/event-stream')
-  assert.ok(!('authorization' in requests[0].init.headers))
-})
+  assert.equal(requests[0].init.headers["content-type"], "application/json");
+  assert.equal(requests[0].init.headers.accept, "text/event-stream");
+  assert.ok(!("authorization" in requests[0].init.headers));
+});
 
-test('stream: llamacpp dialect — effort in kwargs, budget top-level, usage requested', async () => {
+test("stream: llamacpp dialect — effort in kwargs, budget top-level, usage requested", async () => {
   const frames = [
     'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
     'data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\n',
-    'data: [DONE]\n\n',
-  ]
-  const { fetch, requests } = fakeFetch(sseResponse(frames))
-  const adapter = new QwenLocalAdapter({ ...CONFIG, dialect: 'llamacpp', includeUsage: true, fetch })
-  const chunks = []
-  for await (const chunk of adapter.stream(options())) chunks.push(chunk)
+    "data: [DONE]\n\n",
+  ];
+  const { fetch, requests } = fakeFetch(sseResponse(frames));
+  const adapter = new QwenLocalAdapter({
+    ...CONFIG,
+    dialect: "llamacpp",
+    includeUsage: true,
+    fetch,
+  });
+  const chunks = [];
+  for await (const chunk of adapter.stream(options())) chunks.push(chunk);
 
-  const sent = JSON.parse(requests[0].init.body)
-  assert.ok(!('reasoning_effort' in sent))
-  assert.deepEqual(sent.chat_template_kwargs, { enable_thinking: true, reasoning_effort: 'medium' })
-  assert.equal(sent.reasoning_budget_tokens, 8192)
-  assert.deepEqual(sent.stream_options, { include_usage: true })
+  const sent = JSON.parse(requests[0].init.body);
+  assert.ok(!("reasoning_effort" in sent));
+  assert.deepEqual(sent.chat_template_kwargs, {
+    enable_thinking: true,
+    reasoning_effort: "medium",
+  });
+  assert.equal(sent.reasoning_budget_tokens, 8192);
+  assert.deepEqual(sent.stream_options, { include_usage: true });
   // length → max-tokens: a budget/truncation stop is not presented as complete.
-  assert.deepEqual(chunks.at(-1).reason, { kind: 'max-tokens' })
-})
+  assert.deepEqual(chunks.at(-1).reason, { kind: "max-tokens" });
+});
 
-test('stream: HTTP error surfaces with the stable code and status', async () => {
+test("stream: HTTP error surfaces with the stable code and status", async () => {
   const response = {
     ok: false,
     status: 400,
-    headers: { get: () => 'text/plain' },
-    text: async () => 'thinking_budget_capacity_insufficient',
+    headers: { get: () => "text/plain" },
+    text: async () => "thinking_budget_capacity_insufficient",
     body: null,
-  }
-  const { fetch } = fakeFetch(response)
-  const adapter = new QwenLocalAdapter({ ...CONFIG, fetch })
+  };
+  const { fetch } = fakeFetch(response);
+  const adapter = new QwenLocalAdapter({ ...CONFIG, fetch });
   await assert.rejects(
-    (async () => { for await (const _ of adapter.stream(options())) { /* drain */ } })(),
-    (error) => error.code === 'PROVIDER_HTTP_ERROR' && /HTTP 400/.test(error.message) && /thinking_budget_capacity_insufficient/.test(error.message),
-  )
-})
+    (async () => {
+      for await (const _ of adapter.stream(options())) {
+        /* drain */
+      }
+    })(),
+    (error) =>
+      error.code === "PROVIDER_HTTP_ERROR" &&
+      /HTTP 400/.test(error.message) &&
+      /thinking_budget_capacity_insufficient/.test(error.message),
+  );
+});
 
-test('stream: a vision media-budget 400 classifies as CONTEXT_WINDOW_EXCEEDED', async () => {
+test("stream: a vision media-budget 400 classifies as CONTEXT_WINDOW_EXCEEDED", async () => {
   const response = {
     ok: false,
     status: 400,
-    headers: { get: () => 'application/json' },
-    text: async () => JSON.stringify({
-      error: {
-        code: 'media_budget_exceeded',
-        message: 'vision raw patches exceed processor budget',
-        param: 'messages',
-        type: 'invalid_request_error',
-      },
-    }),
+    headers: { get: () => "application/json" },
+    text: async () =>
+      JSON.stringify({
+        error: {
+          code: "media_budget_exceeded",
+          message: "vision raw patches exceed processor budget",
+          param: "messages",
+          type: "invalid_request_error",
+        },
+      }),
     body: null,
-  }
-  const { fetch } = fakeFetch(response)
-  const adapter = new QwenLocalAdapter({ ...CONFIG, fetch })
+  };
+  const { fetch } = fakeFetch(response);
+  const adapter = new QwenLocalAdapter({ ...CONFIG, fetch });
   await assert.rejects(
-    (async () => { for await (const _ of adapter.stream(options())) { /* drain */ } })(),
-    (error) => error.code === 'CONTEXT_WINDOW_EXCEEDED'
-      && /HTTP 400/.test(error.message)
-      && /media_budget_exceeded/.test(error.message),
-  )
-})
+    (async () => {
+      for await (const _ of adapter.stream(options())) {
+        /* drain */
+      }
+    })(),
+    (error) =>
+      error.code === "CONTEXT_WINDOW_EXCEEDED" &&
+      /HTTP 400/.test(error.message) &&
+      /media_budget_exceeded/.test(error.message),
+  );
+});
 
-test('stream: transport failure surfaces as PROVIDER_UNREACHABLE; caller abort rethrows the cause', async () => {
-  const boom = new Error('ECONNREFUSED')
-  const failing = async () => { throw boom }
-  const adapter = new QwenLocalAdapter({ ...CONFIG, fetch: failing })
+test("stream: transport failure surfaces as PROVIDER_UNREACHABLE; caller abort rethrows the cause", async () => {
+  const boom = new Error("ECONNREFUSED");
+  const failing = async () => {
+    throw boom;
+  };
+  const adapter = new QwenLocalAdapter({ ...CONFIG, fetch: failing });
   await assert.rejects(
-    (async () => { for await (const _ of adapter.stream(options())) { /* drain */ } })(),
-    (error) => error.code === 'PROVIDER_UNREACHABLE' && error.cause === boom,
-  )
+    (async () => {
+      for await (const _ of adapter.stream(options())) {
+        /* drain */
+      }
+    })(),
+    (error) => error.code === "PROVIDER_UNREACHABLE" && error.cause === boom,
+  );
 
-  const controller = new AbortController()
-  controller.abort()
-  const aborting = async () => { throw boom }
-  const abortingAdapter = new QwenLocalAdapter({ ...CONFIG, fetch: aborting })
-  const abortOptions = { ...options(), signal: controller.signal }
+  const controller = new AbortController();
+  controller.abort();
+  const aborting = async () => {
+    throw boom;
+  };
+  const abortingAdapter = new QwenLocalAdapter({ ...CONFIG, fetch: aborting });
+  const abortOptions = { ...options(), signal: controller.signal };
   await assert.rejects(
-    (async () => { for await (const _ of abortingAdapter.stream(abortOptions)) { /* drain */ } })(),
+    (async () => {
+      for await (const _ of abortingAdapter.stream(abortOptions)) {
+        /* drain */
+      }
+    })(),
     (error) => error === boom,
-  )
-})
+  );
+});
 
-test('stream: non-streaming JSON answer is translated to the same chunk sequence', async () => {
+test("stream: non-streaming JSON answer is translated to the same chunk sequence", async () => {
   const body = {
-    choices: [{ message: { content: 'done', reasoning_content: 'thought' }, finish_reason: 'stop' }],
+    choices: [
+      {
+        message: { content: "done", reasoning_content: "thought" },
+        finish_reason: "stop",
+      },
+    ],
     usage: { prompt_tokens: 3, completion_tokens: 7 },
-  }
-  const { fetch } = fakeFetch(jsonResponse(body))
-  const adapter = new QwenLocalAdapter({ ...CONFIG, fetch })
-  const chunks = []
-  for await (const chunk of adapter.stream(options())) chunks.push(chunk)
-  const types = chunks.map((chunk) => chunk.type)
-  assert.deepEqual(types, ['block-start', 'reasoning-delta', 'block-start', 'text-delta', 'block-end', 'block-end', 'usage', 'finish'])
-  assert.deepEqual(chunks.at(-1).reason, { kind: 'stop' })
-})
+  };
+  const { fetch } = fakeFetch(jsonResponse(body));
+  const adapter = new QwenLocalAdapter({ ...CONFIG, fetch });
+  const chunks = [];
+  for await (const chunk of adapter.stream(options())) chunks.push(chunk);
+  const types = chunks.map((chunk) => chunk.type);
+  assert.deepEqual(types, [
+    "block-start",
+    "reasoning-delta",
+    "block-start",
+    "text-delta",
+    "block-end",
+    "block-end",
+    "usage",
+    "finish",
+  ]);
+  assert.deepEqual(chunks.at(-1).reason, { kind: "stop" });
+});
 
-test('stream: an assistant image block is refused before any wire traffic', async () => {
-  let called = false
-  const fetch = async () => { called = true; return sseResponse([]) }
-  const adapter = new QwenLocalAdapter({ ...CONFIG, fetch })
+test("stream: an assistant image block is refused before any wire traffic", async () => {
+  let called = false;
+  const fetch = async () => {
+    called = true;
+    return sseResponse([]);
+  };
+  const adapter = new QwenLocalAdapter({ ...CONFIG, fetch });
   const badOptions = {
     ...options(),
-    messages: [{ role: 'assistant', content: [{ type: 'image', attachment: { name: 'x' } }] }],
-  }
+    messages: [
+      {
+        role: "assistant",
+        content: [{ type: "image", attachment: { name: "x" } }],
+      },
+    ],
+  };
   await assert.rejects(
-    (async () => { for await (const _ of adapter.stream(badOptions)) { /* drain */ } })(),
-    (error) => error.code === 'UNSUPPORTED_CONTENT',
-  )
-  assert.equal(called, false)
-})
+    (async () => {
+      for await (const _ of adapter.stream(badOptions)) {
+        /* drain */
+      }
+    })(),
+    (error) => error.code === "UNSUPPORTED_CONTENT",
+  );
+  assert.equal(called, false);
+});
 
-test('stream: a user-side reasoning block (subagent-settled notice) is dropped, not refused', async () => {
+test("stream: a user-side reasoning block (subagent-settled notice) is dropped, not refused", async () => {
   const frames = [
     'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
     'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
-    'data: [DONE]\n\n',
-  ]
-  const { fetch, requests } = fakeFetch(sseResponse(frames))
-  const adapter = new QwenLocalAdapter({ ...CONFIG, fetch })
+    "data: [DONE]\n\n",
+  ];
+  const { fetch, requests } = fakeFetch(sseResponse(frames));
+  const adapter = new QwenLocalAdapter({ ...CONFIG, fetch });
   const settledOptions = {
     ...options(),
-    messages: [{
-      role: 'user',
-      content: [
-        { type: 'text', text: 'Background subagent abc finished.' },
-        { type: 'text', text: 'Its closing message:' },
-        { type: 'reasoning', text: 'The report has been accepted.\n' },
-        { type: 'text', text: 'report body' },
-      ],
-    }],
-  }
-  const chunks = []
-  for await (const chunk of adapter.stream(settledOptions)) chunks.push(chunk)
-  assert.equal(chunks.at(-1).type, 'finish')
-  const sent = JSON.parse(requests[0].init.body)
-  const userMessage = sent.messages.find((message) => message.role === 'user')
-  assert.equal(typeof userMessage.content, 'string')
-  assert.ok(userMessage.content.includes('Background subagent abc finished.'))
-  assert.ok(userMessage.content.includes('report body'))
-  assert.ok(!userMessage.content.includes('The report has been accepted'))
-})
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Background subagent abc finished." },
+          { type: "text", text: "Its closing message:" },
+          { type: "reasoning", text: "The report has been accepted.\n" },
+          { type: "text", text: "report body" },
+        ],
+      },
+    ],
+  };
+  const chunks = [];
+  for await (const chunk of adapter.stream(settledOptions)) chunks.push(chunk);
+  assert.equal(chunks.at(-1).type, "finish");
+  const sent = JSON.parse(requests[0].init.body);
+  const userMessage = sent.messages.find((message) => message.role === "user");
+  assert.equal(typeof userMessage.content, "string");
+  assert.ok(userMessage.content.includes("Background subagent abc finished."));
+  assert.ok(userMessage.content.includes("report body"));
+  assert.ok(!userMessage.content.includes("The report has been accepted"));
+});
 
-test('stream: user image blocks resolve to image_url data URLs through the attachment service', async () => {
-  const pngBytes = new Uint8Array([137, 80, 78, 73, 13, 10, 26, 10])
-  const ref = { attachmentId: 'att-1', mediaType: 'image/png', bytes: 8, width: 2, height: 2, name: 'x.png' }
-  const attachment = { readImage: async () => ({ ref, data: pngBytes }) }
+test("stream: user image blocks resolve to image_url data URLs through the attachment service", async () => {
+  const pngBytes = new Uint8Array([137, 80, 78, 73, 13, 10, 26, 10]);
+  const ref = {
+    attachmentId: "att-1",
+    mediaType: "image/png",
+    bytes: 8,
+    width: 2,
+    height: 2,
+    name: "x.png",
+  };
+  const attachment = { readImage: async () => ({ ref, data: pngBytes }) };
   const frames = [
     'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
     'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
-    'data: [DONE]\n\n',
-  ]
-  const { fetch, requests } = fakeFetch(sseResponse(frames))
-  const adapter = new QwenLocalAdapter({ ...CONFIG, attachment, fetch })
+    "data: [DONE]\n\n",
+  ];
+  const { fetch, requests } = fakeFetch(sseResponse(frames));
+  const adapter = new QwenLocalAdapter({ ...CONFIG, attachment, fetch });
   const imageOptions = {
     ...options(),
-    messages: [{ role: 'user', content: [{ type: 'text', text: 'look' }, { type: 'image', attachment: ref }] }],
-  }
-  const chunks = []
-  for await (const chunk of adapter.stream(imageOptions)) chunks.push(chunk)
-  assert.equal(chunks.at(-1).type, 'finish')
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "look" },
+          { type: "image", attachment: ref },
+        ],
+      },
+    ],
+  };
+  const chunks = [];
+  for await (const chunk of adapter.stream(imageOptions)) chunks.push(chunk);
+  assert.equal(chunks.at(-1).type, "finish");
 
-  const sent = JSON.parse(requests[0].init.body)
-  const userMessage = sent.messages.find((message) => message.role === 'user')
-  const imageEntry = userMessage.content.find((entry) => entry.type === 'image_url')
-  const expected = `data:image/png;base64,${Buffer.from(pngBytes).toString('base64')}`
-  assert.deepEqual(imageEntry, { type: 'image_url', image_url: { url: expected } })
-  assert.ok(userMessage.content.some((entry) => entry.type === 'text' && entry.text === 'look'))
-})
+  const sent = JSON.parse(requests[0].init.body);
+  const userMessage = sent.messages.find((message) => message.role === "user");
+  const imageEntry = userMessage.content.find(
+    (entry) => entry.type === "image_url",
+  );
+  const expected = `data:image/png;base64,${Buffer.from(pngBytes).toString("base64")}`;
+  assert.deepEqual(imageEntry, {
+    type: "image_url",
+    image_url: { url: expected },
+  });
+  assert.ok(
+    userMessage.content.some(
+      (entry) => entry.type === "text" && entry.text === "look",
+    ),
+  );
+});
 
-test('stream: a nested tool-result image resolves to a multimodal tool content array', async () => {
-  const pngBytes = new Uint8Array([137, 80, 78, 73, 13, 10, 26, 10])
-  const ref = { attachmentId: 'att-t1', mediaType: 'image/png', bytes: 8, width: 2, height: 2, name: 'shot.png' }
-  const attachment = { readImage: async () => ({ ref, data: pngBytes }) }
+test("stream: a nested tool-result image resolves to a multimodal tool content array", async () => {
+  const pngBytes = new Uint8Array([137, 80, 78, 73, 13, 10, 26, 10]);
+  const ref = {
+    attachmentId: "att-t1",
+    mediaType: "image/png",
+    bytes: 8,
+    width: 2,
+    height: 2,
+    name: "shot.png",
+  };
+  const attachment = { readImage: async () => ({ ref, data: pngBytes }) };
   const frames = [
     'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
     'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
-    'data: [DONE]\n\n',
-  ]
-  const { fetch, requests } = fakeFetch(sseResponse(frames))
-  const adapter = new QwenLocalAdapter({ ...CONFIG, attachment, fetch })
+    "data: [DONE]\n\n",
+  ];
+  const { fetch, requests } = fakeFetch(sseResponse(frames));
+  const adapter = new QwenLocalAdapter({ ...CONFIG, attachment, fetch });
   const imageOptions = {
     ...options(),
-    messages: [{ role: 'user', content: [{ type: 'tool-result', toolCallId: 'c9', content: [{ type: 'image', attachment: ref }] }] }],
-  }
-  const chunks = []
-  for await (const chunk of adapter.stream(imageOptions)) chunks.push(chunk)
-  assert.equal(chunks.at(-1).type, 'finish')
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "c9",
+            content: [{ type: "image", attachment: ref }],
+          },
+        ],
+      },
+    ],
+  };
+  const chunks = [];
+  for await (const chunk of adapter.stream(imageOptions)) chunks.push(chunk);
+  assert.equal(chunks.at(-1).type, "finish");
 
-  const sent = JSON.parse(requests[0].init.body)
-  const toolMessage = sent.messages.find((message) => message.role === 'tool')
-  const expected = `data:image/png;base64,${Buffer.from(pngBytes).toString('base64')}`
-  assert.deepEqual(toolMessage.content, [{ type: 'image_url', image_url: { url: expected } }])
-})
+  const sent = JSON.parse(requests[0].init.body);
+  const toolMessage = sent.messages.find((message) => message.role === "tool");
+  const expected = `data:image/png;base64,${Buffer.from(pngBytes).toString("base64")}`;
+  assert.deepEqual(toolMessage.content, [
+    { type: "image_url", image_url: { url: expected } },
+  ]);
+});
 
-test('stream: the attachment seam resolves live when the store arrives after construction', async () => {
-  const pngBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 57])
-  const ref = { attachmentId: 'att-late', mediaType: 'image/png', bytes: 8, width: 2, height: 2, name: 'late.png' }
-  // The settings seam supplies the store through a `ctx.inject` child fiber
-  // whose callback runs after the adapter is constructed; the source closure
-  // flips over only once the service is ready.
-  let attachment
+test("stream: the attachment seam resolves live when the store arrives after construction", async () => {
+  const pngBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 57]);
+  const ref = {
+    attachmentId: "att-late",
+    mediaType: "image/png",
+    bytes: 8,
+    width: 2,
+    height: 2,
+    name: "late.png",
+  };
+  // The plugin supplies the store through a `ctx.inject` child fiber whose
+  // callback runs after the adapter is constructed; setAttachment flips it
+  // over once the service is ready.
   const frames = [
     'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
     'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
-    'data: [DONE]\n\n',
-  ]
-  const { fetch, requests } = fakeFetch(sseResponse(frames))
-  const adapter = new QwenLocalAdapter(() => ({ ...CONFIG, attachment, fetch }))
+    "data: [DONE]\n\n",
+  ];
+  const { fetch, requests } = fakeFetch(sseResponse(frames));
+  const adapter = new QwenLocalAdapter({ ...CONFIG, fetch });
   // The store arrives after construction: a construction-time capture would
   // see `undefined` and degrade the image to a placeholder.
-  attachment = { readImage: async () => ({ ref, data: pngBytes }) }
+  adapter.setAttachment({ readImage: async () => ({ ref, data: pngBytes }) });
   const imageOptions = {
     ...options(),
-    messages: [{ role: 'user', content: [{ type: 'image', attachment: ref }] }],
-  }
-  const chunks = []
-  for await (const chunk of adapter.stream(imageOptions)) chunks.push(chunk)
-  assert.equal(chunks.at(-1).type, 'finish')
-  const sent = JSON.parse(requests[0].init.body)
-  const userMessage = sent.messages.find((message) => message.role === 'user')
-  const imageEntry = userMessage.content.find((entry) => entry.type === 'image_url')
-  assert.deepEqual(imageEntry, { type: 'image_url', image_url: { url: `data:image/png;base64,${Buffer.from(pngBytes).toString('base64')}` } })
-})
+    messages: [{ role: "user", content: [{ type: "image", attachment: ref }] }],
+  };
+  const chunks = [];
+  for await (const chunk of adapter.stream(imageOptions)) chunks.push(chunk);
+  assert.equal(chunks.at(-1).type, "finish");
+  const sent = JSON.parse(requests[0].init.body);
+  const userMessage = sent.messages.find((message) => message.role === "user");
+  const imageEntry = userMessage.content.find(
+    (entry) => entry.type === "image_url",
+  );
+  assert.deepEqual(imageEntry, {
+    type: "image_url",
+    image_url: {
+      url: `data:image/png;base64,${Buffer.from(pngBytes).toString("base64")}`,
+    },
+  });
+});
 
-test('stream: an unreadable image degrades to the placeholder, the request still goes out', async () => {
-  const ref = { attachmentId: 'att-2', mediaType: 'image/png', bytes: 4, width: 1, height: 1, name: 'gone.png' }
-  const attachment = { readImage: async () => { throw new Error('store churn') } }
+test("stream: an unreadable image degrades to the placeholder, the request still goes out", async () => {
+  const ref = {
+    attachmentId: "att-2",
+    mediaType: "image/png",
+    bytes: 4,
+    width: 1,
+    height: 1,
+    name: "gone.png",
+  };
+  const attachment = {
+    readImage: async () => {
+      throw new Error("store churn");
+    },
+  };
   const frames = [
     'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
     'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
-    'data: [DONE]\n\n',
-  ]
-  const { fetch, requests } = fakeFetch(sseResponse(frames))
-  const adapter = new QwenLocalAdapter({ ...CONFIG, attachment, fetch })
+    "data: [DONE]\n\n",
+  ];
+  const { fetch, requests } = fakeFetch(sseResponse(frames));
+  const adapter = new QwenLocalAdapter({ ...CONFIG, attachment, fetch });
   const imageOptions = {
     ...options(),
-    messages: [{ role: 'user', content: [{ type: 'image', attachment: ref }] }],
-  }
-  const chunks = []
-  for await (const chunk of adapter.stream(imageOptions)) chunks.push(chunk)
-  assert.equal(chunks.at(-1).type, 'finish')
-  const sent = JSON.parse(requests[0].init.body)
-  const userMessage = sent.messages.find((message) => message.role === 'user')
-  assert.equal(typeof userMessage.content, 'string')
-  assert.ok(userMessage.content.includes('[image: gone.png 1x1]'))
-})
+    messages: [{ role: "user", content: [{ type: "image", attachment: ref }] }],
+  };
+  const chunks = [];
+  for await (const chunk of adapter.stream(imageOptions)) chunks.push(chunk);
+  assert.equal(chunks.at(-1).type, "finish");
+  const sent = JSON.parse(requests[0].init.body);
+  const userMessage = sent.messages.find((message) => message.role === "user");
+  assert.equal(typeof userMessage.content, "string");
+  assert.ok(userMessage.content.includes("[image: gone.png 1x1]"));
+});
 
-test('resolveModel: context capacity and the effort vocabulary with budgets', async () => {
-  const adapter = new QwenLocalAdapter(CONFIG)
-  const info = await adapter.resolveModel('qwen38', 'qwen')
-  assert.equal(info.provider, 'qwen38')
-  assert.equal(info.id, 'qwen')
-  assert.deepEqual(info.context, { contextWindow: 262144 })
-  assert.equal(info.defaultMaxTokens, 52428)
-  assert.deepEqual(info.inputModalities, ['text', 'image'])
-  const ids = info.reasoning.efforts.map((effort) => effort.id)
-  assert.deepEqual(ids, ['off', 'low', 'medium', 'xhigh'])
-  const medium = info.reasoning.efforts.find((effort) => effort.id === 'medium')
-  assert.equal(medium.budgetTokens, 8192)
-  assert.equal(info.reasoning.defaultEffort, 'medium')
-})
+test("resolveModel: context capacity and the effort vocabulary with budgets", async () => {
+  const adapter = new QwenLocalAdapter(CONFIG);
+  const info = await adapter.resolveModel("qwen38", "qwen");
+  assert.equal(info.provider, "qwen38");
+  assert.equal(info.id, "qwen");
+  assert.deepEqual(info.context, { contextWindow: 262144 });
+  assert.equal(info.defaultMaxTokens, 52428);
+  assert.deepEqual(info.inputModalities, ["text", "image"]);
+  const ids = info.reasoning.efforts.map((effort) => effort.id);
+  assert.deepEqual(ids, ["off", "low", "medium", "xhigh"]);
+  const medium = info.reasoning.efforts.find(
+    (effort) => effort.id === "medium",
+  );
+  assert.equal(medium.budgetTokens, 8192);
+  assert.equal(info.reasoning.defaultEffort, "medium");
+});
 
-test('resolveModel: an undeclared defaultEffort leaves the selector Default row in place', async () => {
-  const adapter = new QwenLocalAdapter({ ...CONFIG, defaultEffort: undefined })
-  const info = await adapter.resolveModel('qwen38', 'qwen')
-  assert.equal(info.reasoning.defaultEffort, undefined)
-})
+test("resolveModel: an undeclared defaultEffort leaves the selector Default row in place", async () => {
+  const adapter = new QwenLocalAdapter({ ...CONFIG, defaultEffort: undefined });
+  const info = await adapter.resolveModel("qwen38", "qwen");
+  assert.equal(info.reasoning.defaultEffort, undefined);
+});
 
-test('listModels: the configured model with text+image input modalities', async () => {
-  const adapter = new QwenLocalAdapter(CONFIG)
-  assert.deepEqual(await adapter.listModels('qwen38'),
-    [{ provider: 'qwen38', id: 'qwen', name: 'qwen', inputModalities: ['text', 'image'] }])
-})
+test("listModels: the configured model with text+image input modalities", async () => {
+  const adapter = new QwenLocalAdapter(CONFIG);
+  assert.deepEqual(await adapter.listModels("qwen38"), [
+    {
+      provider: "qwen38",
+      id: "qwen",
+      name: "qwen",
+      inputModalities: ["text", "image"],
+    },
+  ]);
+});
 
-test('listModels: the display name separates the selector label from the wire id', async () => {
-  const adapter = new QwenLocalAdapter({ ...CONFIG, displayName: 'Qwen3.8-27B' })
-  const models = await adapter.listModels('qwen38')
-  assert.equal(models[0].id, 'qwen')
-  assert.equal(models[0].name, 'Qwen3.8-27B')
-})
+test("listModels: the display name separates the selector label from the wire id", async () => {
+  const adapter = new QwenLocalAdapter({
+    ...CONFIG,
+    displayName: "Qwen3.8-27B",
+  });
+  const models = await adapter.listModels("qwen38");
+  assert.equal(models[0].id, "qwen");
+  assert.equal(models[0].name, "Qwen3.8-27B");
+});
 
-test('imageRequestPricing: the NInfer patch formula per occurrence, empty priced text', () => {
-  const adapter = new QwenLocalAdapter(CONFIG)
+test("imageRequestPricing: the NInfer patch formula per occurrence, empty priced text", () => {
+  const adapter = new QwenLocalAdapter(CONFIG);
   // The meter prices durable ImageBlocks: dimensions live on the
   // attachment ref, not on the block.
   const images = [
-    { type: 'image', attachment: { attachmentId: 'a', mediaType: 'image/png', width: 256, height: 256 } },
-    { type: 'image', attachment: { attachmentId: 'b', mediaType: 'image/png', width: 1024, height: 1024 } },
-    { type: 'image', attachment: { attachmentId: 'c', mediaType: 'image/jpeg', width: 2048, height: 1024 } },
-    { type: 'image', attachment: { attachmentId: 'd', mediaType: 'image/png', width: 100, height: 50 } },
-  ]
-  const prices = adapter.imageRequestPricing('qwen38', 'qwen').priceImages(images)
+    {
+      type: "image",
+      attachment: {
+        attachmentId: "a",
+        mediaType: "image/png",
+        width: 256,
+        height: 256,
+      },
+    },
+    {
+      type: "image",
+      attachment: {
+        attachmentId: "b",
+        mediaType: "image/png",
+        width: 1024,
+        height: 1024,
+      },
+    },
+    {
+      type: "image",
+      attachment: {
+        attachmentId: "c",
+        mediaType: "image/jpeg",
+        width: 2048,
+        height: 1024,
+      },
+    },
+    {
+      type: "image",
+      attachment: {
+        attachmentId: "d",
+        mediaType: "image/png",
+        width: 100,
+        height: 50,
+      },
+    },
+  ];
+  const prices = adapter
+    .imageRequestPricing("qwen38", "qwen")
+    .priceImages(images);
   assert.deepEqual(
     prices.map((price) => price.visualTokens),
     [66, 1026, 2050, 10], // 256^2, 1024^2, 2048x1024, non-multiple ceil(100/32)*ceil(50/32)+2
-  )
-  assert.ok(prices.every((price) => price.text === ''))
-})
+  );
+  assert.ok(prices.every((price) => price.text === ""));
+});
 
-test('imageRequestPricing: offloaded occurrences cost no visual tokens; missing dimensions never price NaN', () => {
-  const adapter = new QwenLocalAdapter(CONFIG)
-  const prices = adapter.imageRequestPricing('qwen38', 'qwen').priceImages([
-    { type: 'image', attachment: { attachmentId: 'a', mediaType: 'image/png', width: 3840, height: 2160 }, offloaded: true },
-    { type: 'image', attachment: { attachmentId: 'b', mediaType: 'image/png' } },
-  ])
+test("imageRequestPricing: offloaded occurrences cost no visual tokens; missing dimensions never price NaN", () => {
+  const adapter = new QwenLocalAdapter(CONFIG);
+  const prices = adapter.imageRequestPricing("qwen38", "qwen").priceImages([
+    {
+      type: "image",
+      attachment: {
+        attachmentId: "a",
+        mediaType: "image/png",
+        width: 3840,
+        height: 2160,
+      },
+      offloaded: true,
+    },
+    {
+      type: "image",
+      attachment: { attachmentId: "b", mediaType: "image/png" },
+    },
+  ]);
   assert.deepEqual(
     prices.map((price) => price.visualTokens),
     [0, 1026], // offloaded placeholder text; 1024x1024 guess for unknown dimensions
-  )
-  assert.ok(prices.every((price) => Number.isFinite(price.visualTokens)))
-})
+  );
+  assert.ok(prices.every((price) => Number.isFinite(price.visualTokens)));
+});
 
-test('imageRequestPricing: the llama.cpp line prices every image at the server clamp maximum', () => {
-  const adapter = new QwenLocalAdapter({ ...CONFIG, dialect: 'llamacpp' })
-  const prices = adapter.imageRequestPricing('qwen38', 'qwen').priceImages([
-    { type: 'image', attachment: { attachmentId: 'a', mediaType: 'image/png', width: 64, height: 64 } },
-    { type: 'image', attachment: { attachmentId: 'b', mediaType: 'image/jpeg', width: 4096, height: 2160 } },
-  ])
+test("imageRequestPricing: the llama.cpp line prices every image at the server clamp maximum", () => {
+  const adapter = new QwenLocalAdapter({ ...CONFIG, dialect: "llamacpp" });
+  const prices = adapter.imageRequestPricing("qwen38", "qwen").priceImages([
+    {
+      type: "image",
+      attachment: {
+        attachmentId: "a",
+        mediaType: "image/png",
+        width: 64,
+        height: 64,
+      },
+    },
+    {
+      type: "image",
+      attachment: {
+        attachmentId: "b",
+        mediaType: "image/jpeg",
+        width: 4096,
+        height: 2160,
+      },
+    },
+  ]);
   assert.deepEqual(
     prices.map((price) => [price.visualTokens, price.text]),
-    [[1536, ''], [1536, '']],
-  )
-})
+    [
+      [1536, ""],
+      [1536, ""],
+    ],
+  );
+});

@@ -9,77 +9,83 @@
  *
  * @module dsh-qwen38-local-qol
  */
-import { QwenLocalAdapter } from './adapter.js'
-import { resolveConfig, DEFAULT_PROVIDER } from './config.js'
-import { NS, sectionSchema, validateSection } from './settings-section.js'
-import { resolveDshHome, readCompactionStatus, autoApplyCompaction, PRESET_ID } from './setup.js'
+import { QwenLocalAdapter } from "./adapter.js";
+import { resolveConfig, DEFAULT_PROVIDER } from "./config.js";
+import { NS, sectionSchema, validateSection } from "./settings-section.js";
+import {
+  resolveDshHome,
+  readCompactionStatus,
+  autoApplyCompaction,
+  PRESET_ID,
+} from "./setup.js";
 
-export { QwenLocalAdapter, PROVIDER_NAME, PROVIDER_HTTP_ERROR_CODE, PROVIDER_UNREACHABLE_CODE } from './adapter.js'
+export {
+  QwenLocalAdapter,
+  PROVIDER_NAME,
+  PROVIDER_HTTP_ERROR_CODE,
+  PROVIDER_UNREACHABLE_CODE,
+} from "./adapter.js";
 export {
   UNSUPPORTED_CONTENT_CODE,
   PROVIDER_PROTOCOL_ERROR_CODE,
   PROVIDER_ERROR_CODE,
-} from './wire.js'
-export { resolveConfig, DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_PROVIDER } from './config.js'
+} from "./wire.js";
+export {
+  resolveConfig,
+  DEFAULT_BASE_URL,
+  DEFAULT_MODEL,
+  DEFAULT_PROVIDER,
+} from "./config.js";
+export { NS, sectionSchema, validateSection } from "./settings-section.js";
+
+/**
+ * The plugin's settings schema (schemastery). The harness auto-derives the
+ * settings form from this; the resolved value is passed to `apply(ctx, config)`.
+ */
+export const Config = sectionSchema();
 
 /** Plugin name, as it appears in the harness plugin registry. */
-export const name = 'qwen38-local-qol'
+export const name = "qwen38-local-qol";
 
 /** Hard dependency: without the `llm` seam there is nothing to register on. */
-export const inject = ['llm']
+export const inject = ["llm"];
 
 /**
  * Register the Qwen3.8 local adapter for its configured provider routes.
  * @param ctx - the harness context, with the injected `llm` seam.
- * @param config - the plugin config; see {@link resolveConfig}.
+ * @param config - the resolved plugin config (from the settings system).
  * @returns the registration handle, released with the fiber.
  */
 export function apply(ctx, config = {}) {
-  const resolved = resolveConfig(config)
-  let current = () => resolved
-  let attachment
+  const resolved = resolveConfig(config);
   // Self-apply the compaction wiring BEFORE the status snapshot, so a first
   // run (a fresh home without the generated preset) reports the post-apply
   // state on this boot. Idempotent: an existing preset and an explicit
   // default are respected. A missing standard source or a write failure is
   // logged, not fatal — the dot stays grey until the next start fixes it.
   try {
-    const autoApply = autoApplyCompaction(resolveDshHome())
+    const autoApply = autoApplyCompaction(resolveDshHome());
     if (autoApply.applied) {
-      console.log(`dsh-qwen38-local-qol: generated the ${PRESET_ID} preset at ${autoApply.preset}`)
+      console.log(
+        `dsh-qwen38-local-qol: generated the ${PRESET_ID} preset at ${autoApply.preset}`,
+      );
     }
-    if (autoApply.defaultChanged !== 'none') {
-      console.log(`dsh-qwen38-local-qol: set the default agent preset to ${PRESET_ID} (${autoApply.defaultChanged})`)
+    if (autoApply.defaultChanged !== "none") {
+      console.log(
+        `dsh-qwen38-local-qol: set the default agent preset to ${PRESET_ID} (${autoApply.defaultChanged})`,
+      );
     }
   } catch (error) {
-    console.warn(`dsh-qwen38-local-qol: compaction auto-apply skipped: ${error instanceof Error ? error.message : String(error)}`)
+    console.warn(
+      `dsh-qwen38-local-qol: compaction auto-apply skipped: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
-  // The compaction wiring status the settings tab renders: computed once at
-  // boot (the section base is static for the process lifetime), so it is
-  // current as of this DSH start — the default-preset half is read live by
-  // the tab from the settings describe, so a default change flips the dot
-  // without a restart.
-  const compaction = readCompactionStatus(resolveDshHome())
-  // The user-settings seam is a declared injection, not a store read: every
-  // dsh profile mounts a settings provider (the base bundle's settings-file
-  // row), and `ctx.inject` waits for it. A `ctx.get('settings')` read races the
-  // boot order — when this apply ran first, the section silently never
-  // installed and the host settings surface had no namespace to write. The
-  // fully resolved row is the base: the installSection detach fallback is the
-  // base value verbatim, so it must already carry every field.
-  ctx.inject(['settings'], (settingsCtx) => {
-    settingsCtx.settings.installSection(ctx, NS, sectionSchema(), { ...resolved, compaction }, {
-      setSource: (source) => { current = source },
-      onChange: () => {},
-      validate: validateSection,
-    })
-  })
   // The attachment seam is optional (the tool-fs precedent): where the profile
   // has no attachment store the child fiber stays pending and image blocks
   // degrade to text placeholders for the process lifetime.
-  ctx.inject(['attachments'], (attachmentCtx) => {
-    attachment = attachmentCtx.attachments
-  })
-  const adapter = new QwenLocalAdapter(() => ({ ...current(), attachment }))
-  return ctx.llm.registerAdapter(resolved.provider, adapter)
+  const adapter = new QwenLocalAdapter(resolved);
+  ctx.inject(["attachments"], (attachmentCtx) => {
+    adapter.setAttachment(attachmentCtx.attachments);
+  });
+  return ctx.llm.registerAdapter(resolved.provider, adapter);
 }
